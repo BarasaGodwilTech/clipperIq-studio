@@ -126,7 +126,6 @@ export class ClipGenerator {
       if (onProgress) onProgress({ phase: 'extracting', clipIndex: 0, total, pct: 0 });
 
       let currentClipIndex = 0;
-      const savePromises = [];
       videoProcessor.onProgress = (pct) => {
         if (onProgress) onProgress({ phase: 'extracting', clipIndex: currentClipIndex, total, pct });
       };
@@ -142,21 +141,19 @@ export class ClipGenerator {
       await videoProcessor.extractClipsBatch(
         videoBlob,
         segs,
-        (i, blob) => {
+        async (i, blob) => {
           currentClipIndex = i + 1;
           if (blob) {
             const c = candidates[i];
             const segOv = segs[i]?.overlayOptions || overlayOptions;
             const mix = bgm ? { bgm, originalVolume, restartAtClipStart: true } : null;
-            savePromises.push(this._saveClip(uploadId, blob, c, i, results, segOv, mix, aspectRatio));
+            // Save each clip immediately upon completion
+            await this._saveClip(uploadId, blob, c, i, results, segOv, mix, aspectRatio);
           }
           if (onProgress) onProgress({ phase: 'extracting', clipIndex: i, total, pct: 100 });
         }
       );
       videoProcessor.onProgress = null;
-
-      // Ensure all immediate saves finished before returning
-      await Promise.all(savePromises);
     }
 
     return results;
