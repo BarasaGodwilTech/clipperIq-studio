@@ -203,8 +203,18 @@ export class VideoProcessor {
         try { if (bgWorker) { bgWorker.postMessage('stop'); bgWorker.terminate(); bgWorker = null; } } catch {}
         try { if (recorder && recorder.state !== 'inactive') recorder.stop(); } catch {}
         try { if (canvas && canvas.parentElement?.id === 'procLivePreview') canvas.parentElement.removeChild(canvas); } catch {}
-        try { if (volOrigListener) document.getElementById('origVolume')?.removeEventListener('input', volOrigListener); } catch {}
-        try { if (volBgmListener) document.getElementById('bgmVolume')?.removeEventListener('input', volBgmListener); } catch {}
+        try {
+          if (volOrigListener) {
+            const origId = audioOptions && audioOptions.originalVolumeId ? audioOptions.originalVolumeId : 'origVolume';
+            document.getElementById(origId)?.removeEventListener('input', volOrigListener);
+          }
+        } catch {}
+        try {
+          if (volBgmListener) {
+            const bgmId = audioOptions && audioOptions.bgmVolumeId ? audioOptions.bgmVolumeId : 'bgmVolume';
+            document.getElementById(bgmId)?.removeEventListener('input', volBgmListener);
+          }
+        } catch {}
         try { if (bgmEl) { bgmEl.pause(); bgmEl.src = ''; } } catch {}
         try { if (bgmBufferNode) bgmBufferNode.stop(); } catch {}
         try { if (bgmObjUrl) URL.revokeObjectURL(bgmObjUrl); } catch {}
@@ -313,14 +323,17 @@ export class VideoProcessor {
             vSource.connect(vGain).connect(dest);
             vGain.connect(monitorGain);
 
-            // Live slider binding (upload modal)
-            const origEl = document.getElementById('origVolume');
-            if (origEl) {
-              try {
-                vGain.gain.value = Math.max(0, Math.min(1, (parseInt(origEl.value || '100') || 100) / 100));
-                volOrigListener = () => { const v = Math.max(0, Math.min(1, (parseInt(origEl.value || '100') || 100) / 100)); vGain.gain.value = v; };
-                origEl.addEventListener('input', volOrigListener);
-              } catch {}
+            // Live slider binding (optional, for interactive UI sessions)
+            if (!audioOptions || audioOptions.bindSliders !== false) {
+              const origId = audioOptions && audioOptions.originalVolumeId ? audioOptions.originalVolumeId : 'origVolume';
+              const origEl = document.getElementById(origId);
+              if (origEl) {
+                try {
+                  vGain.gain.value = Math.max(0, Math.min(1, (parseInt(origEl.value || '100') || 100) / 100));
+                  volOrigListener = () => { const v = Math.max(0, Math.min(1, (parseInt(origEl.value || '100') || 100) / 100)); vGain.gain.value = v; };
+                  origEl.addEventListener('input', volOrigListener);
+                } catch {}
+              }
             }
 
             // BGM node
@@ -339,7 +352,9 @@ export class VideoProcessor {
             bGain.connect(monitorGain);
 
             const bindBgmSlider = () => {
-              const volEl = document.getElementById('bgmVolume');
+              if (audioOptions && audioOptions.bindSliders === false) return;
+              const bgmId = audioOptions && audioOptions.bgmVolumeId ? audioOptions.bgmVolumeId : 'bgmVolume';
+              const volEl = document.getElementById(bgmId);
               if (volEl) {
                 try {
                   bGain.gain.value = Math.max(0, Math.min(1, (parseInt(volEl.value || '25') || 0) / 100));

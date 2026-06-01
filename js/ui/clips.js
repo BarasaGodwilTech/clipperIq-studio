@@ -116,8 +116,34 @@ export const clipsUI = {
 
       const overlay = { format: clip.overlayFormat || 'none', partNumber: clip.partNumber, overlayStartSec };
       const aspect = clip.aspectRatio || 'original';
+      // Preserve existing audio mix (if any) when re-generating the clip
+      let newBlob;
+      let bgm = null;
+      const originalVolume = typeof clip.originalVolume === 'number' ? clip.originalVolume : 1;
+      const bgmVolume = typeof clip.bgmVolume === 'number' ? clip.bgmVolume : 0.25;
+      const restartAtClipStart = !!clip.bgmRestart;
 
-      const newBlob = await videoProcessor._extractClipMediaRecorder(originalBlob, start, duration, null, overlay, aspect);
+      if (clip.bgmEnabled && clip.bgmSource) {
+        if (clip.bgmSource.type === 'blob' && clip.bgmSource.blobId) {
+          bgm = { type: 'blob', blobId: clip.bgmSource.blobId, volume: bgmVolume, loop: true };
+        } else if (clip.bgmSource.type === 'url' && clip.bgmSource.url) {
+          bgm = { type: 'url', url: clip.bgmSource.url, volume: bgmVolume, loop: true };
+        }
+      }
+
+      if (bgm) {
+        newBlob = await videoProcessor._extractClipWithAudioMix(
+          originalBlob,
+          start,
+          duration,
+          null,
+          overlay,
+          aspect,
+          { bgm, originalVolume, restartAtClipStart, bindSliders: false }
+        );
+      } else {
+        newBlob = await videoProcessor._extractClipMediaRecorder(originalBlob, start, duration, null, overlay, aspect);
+      }
 
       const newBlobId = videoStore.generateId('clip');
       await videoStore.saveBlob(newBlobId, newBlob, { clipIndex: clip.partNumber != null ? clip.partNumber - 1 : 0 });
@@ -282,7 +308,7 @@ export const clipsUI = {
       const aspect = clip.aspectRatio || 'original';
 
       const newBlob = await (bgm
-        ? videoProcessor._extractClipWithAudioMix(originalBlob, clip.startTime, clip.duration, null, overlay, aspect, { bgm, originalVolume, restartAtClipStart: restart })
+        ? videoProcessor._extractClipWithAudioMix(originalBlob, clip.startTime, clip.duration, null, overlay, aspect, { bgm, originalVolume, restartAtClipStart: restart, originalVolumeId: 'mixOrigVol', bgmVolumeId: 'mixBgmVol' })
         : videoProcessor._extractClipMediaRecorder(originalBlob, clip.startTime, clip.duration, null, overlay, aspect));
 
       const newBlobId = videoStore.generateId('clip');
@@ -315,7 +341,7 @@ export const clipsUI = {
           if (t.id === clip.id) continue;
           try {
             const tBlob = await (bgm
-              ? videoProcessor._extractClipWithAudioMix(originalBlob, t.startTime, t.duration, null, { format: t.overlayFormat || 'none', partNumber: t.partNumber, overlayStartSec: t.overlayStartSec || 0 }, t.aspectRatio || 'original', { bgm, originalVolume, restartAtClipStart: restart })
+              ? videoProcessor._extractClipWithAudioMix(originalBlob, t.startTime, t.duration, null, { format: t.overlayFormat || 'none', partNumber: t.partNumber, overlayStartSec: t.overlayStartSec || 0 }, t.aspectRatio || 'original', { bgm, originalVolume, restartAtClipStart: restart, originalVolumeId: 'mixOrigVol', bgmVolumeId: 'mixBgmVol' })
               : videoProcessor._extractClipMediaRecorder(originalBlob, t.startTime, t.duration, null, { format: t.overlayFormat || 'none', partNumber: t.partNumber, overlayStartSec: t.overlayStartSec || 0 }, t.aspectRatio || 'original'));
             const tBlobId = videoStore.generateId('clip');
             await videoStore.saveBlob(tBlobId, tBlob, { clipIndex: t.partNumber != null ? t.partNumber - 1 : 0 });
