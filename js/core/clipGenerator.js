@@ -229,16 +229,31 @@ export class ClipGenerator {
     if (seriesMode) {
       if (onProgress) onProgress({ phase: 'series-skip', pct: 60 });
       duration = await this._getVideoDuration(videoBlob);
+
+      // Sequential parts with optional overlap between consecutive clips.
+      // Example: with targetDuration=30 and overlapSeconds=3,
+      // Part 1: [0, 30], Part 2: [27, 57], Part 3: [54, 84], ...
+      const overlapSeconds = 3;
       const total = Math.ceil(duration / targetDuration);
-      candidates = Array.from({ length: total }, (_, i) => ({
-        start: i * targetDuration,
-        duration: Math.min(targetDuration, duration - i * targetDuration),
-        totalScore: 100,
-        audioScore: 0,
-        sceneScore: 0,
-        posScore: 1,
-        sources: ['series'],
-      }));
+      const series = [];
+      for (let i = 0; i < total; i++) {
+        const rawStart = i * targetDuration;
+        const start = i === 0 ? 0 : Math.max(0, rawStart - overlapSeconds);
+        const maxDur = duration - start;
+        const clipDur = Math.min(targetDuration, maxDur);
+        if (clipDur <= 0.25) continue; // Skip degenerate segments at the tail
+
+        series.push({
+          start,
+          duration: clipDur,
+          totalScore: 100,
+          audioScore: 0,
+          sceneScore: 0,
+          posScore: 1,
+          sources: ['series'],
+        });
+      }
+      candidates = series;
     } else {
       if (onProgress) onProgress({ phase: 'analyzing', pct: 0 });
       const result = await this.analyze(videoBlob, (p) => {

@@ -754,8 +754,8 @@ export class VideoProcessor {
               preview.style.display = 'block';
             }
           }, overlayOptions, aspectRatio, audioOptions);
-          if (blob.size < 1000) {
-            console.warn(`[MediaRecorder] Clip ${i + 1} too small (${blob.size} bytes), skipping`);
+          if (!blob || blob.size === 0) {
+            console.warn(`[MediaRecorder] Clip ${i + 1} produced empty output, skipping`);
             blob = null;
           } else {
             console.log(`[MediaRecorder] Clip ${i + 1} done: ${(blob.size / 1024).toFixed(1)} KB`);
@@ -808,8 +808,8 @@ export class VideoProcessor {
         const outputData = await this.ffmpeg.readFile(outputName);
         await this.ffmpeg.deleteFile(outputName).catch(() => {});
 
-        if (outputData.length < 1000) {
-          console.warn(`[FFmpeg] Clip ${i + 1} output too small (${outputData.length} bytes), skipping`);
+        if (!outputData || outputData.length === 0) {
+          console.warn(`[FFmpeg] Clip ${i + 1} output empty (0 bytes), skipping`);
         } else {
           blob = new Blob([outputData.buffer], { type: 'video/mp4' });
           console.log(`[FFmpeg] Clip ${i + 1} done: ${(blob.size / 1024).toFixed(1)} KB`);
