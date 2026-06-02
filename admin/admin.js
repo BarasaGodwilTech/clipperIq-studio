@@ -1,7 +1,5 @@
-import { auth, onAuthStateChanged, loginUser, logoutUser, loginWithGoogle, saveApiKeysToFirebase } from '../js/firebase.js';
-import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-
-const firestore = getFirestore();
+import { auth, firestore, onAuthStateChanged, loginUser, logoutUser, loginWithGoogle, saveApiKeysToFirebase } from '../js/firebase.js';
+import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 const authBtn = document.getElementById('authBtn');
 const authGoogleBtn = document.getElementById('authGoogleBtn');
