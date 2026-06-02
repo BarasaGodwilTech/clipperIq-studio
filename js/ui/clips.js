@@ -444,7 +444,13 @@ window.clipsUI = clipsUI;
 try {
   window.addEventListener('clip:saved', async (e) => {
     const clip = e?.detail;
-    try { await clipsUI.refresh(); } catch {}
+    console.log('[ClipsUI] clip:saved event received', clip);
+    try {
+      await clipsUI.refresh();
+      console.log('[ClipsUI] refresh after clip:saved completed');
+    } catch (err) {
+      console.error('[ClipsUI] refresh after clip:saved failed', err);
+    }
     try {
       const name = clip?.title || `Clip (${clip?.id || ''})`;
       notify.success(`Saved: ${name}`);

@@ -110,6 +110,8 @@ export class ClipGenerator {
     const results = [];
     const total = candidates.length;
 
+    console.log('[ClipGenerator] generateClips start', { uploadId, total, reEncode });
+
     if (reEncode) {
       for (let i = 0; i < total; i++) {
         const c = candidates[i];
@@ -156,45 +158,56 @@ export class ClipGenerator {
       videoProcessor.onProgress = null;
     }
 
+    console.log('[ClipGenerator] generateClips done', { uploadId, total, saved: results.length });
     return results;
   }
 
   async _saveClip(uploadId, clipBlob, c, i, results, overlayOptions = {}, audioMix = null, aspectRatio = 'original') {
-    const blobId = videoStore.generateId('clip');
-    await videoStore.saveBlob(blobId, clipBlob, { clipIndex: i });
-
-    const record = {
-      uploadId,
-      blobId,
-      startTime: c.start,
-      duration: c.duration,
-      score: c.totalScore,
-      audioScore: c.audioScore,
-      sceneScore: c.sceneScore,
-      sources: c.sources,
-      status: 'ready',
-      createdAt: new Date().toISOString(),
-      title: (overlayOptions.format !== 'none' && overlayOptions.partNumber != null)
-        ? `Part ${overlayOptions.partNumber + i} (${formatTime(c.start)} \u2013 ${formatTime(c.start + c.duration)})`
-        : `Clip ${i + 1} (${formatTime(c.start)} \u2013 ${formatTime(c.start + c.duration)})`,
-      partNumber: (overlayOptions.partNumber != null) ? overlayOptions.partNumber + i : null,
-      overlayFormat: overlayOptions.format || 'none',
-      overlayStartSec: typeof overlayOptions.overlayStartSec === 'number' ? overlayOptions.overlayStartSec : 0,
-      aspectRatio,
-      // Audio mix metadata (optional)
-      bgmEnabled: !!(audioMix && audioMix.bgm),
-      bgmSource: audioMix?.bgm ? (audioMix.bgm.type === 'blob' ? { type: 'blob', blobId: audioMix.bgm.blobId } : { type: 'url', url: audioMix.bgm.url }) : null,
-      originalVolume: typeof audioMix?.originalVolume === 'number' ? audioMix.originalVolume : undefined,
-      bgmVolume: typeof audioMix?.bgm?.volume === 'number' ? audioMix.bgm.volume : undefined,
-      bgmRestart: !!audioMix?.restartAtClipStart,
-    };
-
-    const clipId = await db.put(STORES.CLIPS, record);
-    const saved = { id: clipId, blobId, ...record };
-    results.push(saved);
     try {
-      window.dispatchEvent(new CustomEvent('clip:saved', { detail: saved }));
-    } catch {}
+      const blobId = videoStore.generateId('clip');
+      console.log('[ClipGenerator] _saveClip start', { uploadId, index: i, start: c.start, duration: c.duration, hasBlob: !!clipBlob, blobSize: clipBlob ? clipBlob.size : 0 });
+      await videoStore.saveBlob(blobId, clipBlob, { clipIndex: i });
+
+      const record = {
+        uploadId,
+        blobId,
+        startTime: c.start,
+        duration: c.duration,
+        score: c.totalScore,
+        audioScore: c.audioScore,
+        sceneScore: c.sceneScore,
+        sources: c.sources,
+        status: 'ready',
+        createdAt: new Date().toISOString(),
+        title: (overlayOptions.format !== 'none' && overlayOptions.partNumber != null)
+          ? `Part ${overlayOptions.partNumber + i} (${formatTime(c.start)} \u2013 ${formatTime(c.start + c.duration)})`
+          : `Clip ${i + 1} (${formatTime(c.start)} \u2013 ${formatTime(c.start + c.duration)})`,
+        partNumber: (overlayOptions.partNumber != null) ? overlayOptions.partNumber + i : null,
+        overlayFormat: overlayOptions.format || 'none',
+        overlayStartSec: typeof overlayOptions.overlayStartSec === 'number' ? overlayOptions.overlayStartSec : 0,
+        aspectRatio,
+        // Audio mix metadata (optional)
+        bgmEnabled: !!(audioMix && audioMix.bgm),
+        bgmSource: audioMix?.bgm ? (audioMix.bgm.type === 'blob' ? { type: 'blob', blobId: audioMix.bgm.blobId } : { type: 'url', url: audioMix.bgm.url }) : null,
+        originalVolume: typeof audioMix?.originalVolume === 'number' ? audioMix.originalVolume : undefined,
+        bgmVolume: typeof audioMix?.bgm?.volume === 'number' ? audioMix.bgm.volume : undefined,
+        bgmRestart: !!audioMix?.restartAtClipStart,
+      };
+
+      const clipId = await db.put(STORES.CLIPS, record);
+      const saved = { id: clipId, blobId, ...record };
+      results.push(saved);
+      console.log('[ClipGenerator] _saveClip done', { uploadId, index: i, clipId, blobId });
+      try {
+        window.dispatchEvent(new CustomEvent('clip:saved', { detail: saved }));
+      } catch (evtErr) {
+        console.error('[ClipGenerator] clip:saved dispatch failed', evtErr);
+      }
+      return saved;
+    } catch (err) {
+      console.error('[ClipGenerator] Failed to save clip', { uploadId, index: i, error: err });
+      return null;
+    }
   }
 
   async processUpload(uploadId, onProgress = null, options = {}) {

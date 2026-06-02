@@ -768,7 +768,14 @@ export class VideoProcessor {
 
         if (this.onProgress) this.onProgress(100);
         results.push(blob);
-        if (onClipDone) onClipDone(i, blob);
+        if (onClipDone) {
+          try {
+            console.log('[VideoProcessor] onClipDone (MediaRecorder)', { index: i, hasBlob: !!blob, size: blob ? blob.size : 0 });
+            await onClipDone(i, blob);
+          } catch (err) {
+            console.error('[VideoProcessor] onClipDone callback failed (MediaRecorder):', err);
+          }
+        }
       }
       return results;
     }
@@ -820,7 +827,14 @@ export class VideoProcessor {
       }
 
       results.push(blob);
-      if (onClipDone) onClipDone(i, blob);
+      if (onClipDone) {
+        try {
+          console.log('[VideoProcessor] onClipDone (FFmpeg)', { index: i, hasBlob: !!blob, size: blob ? blob.size : 0 });
+          await onClipDone(i, blob);
+        } catch (err) {
+          console.error('[VideoProcessor] onClipDone callback failed (FFmpeg):', err);
+        }
+      }
       if (this.onProgress) this.onProgress(Math.round(((i + 1) / segments.length) * 100));
     }
 
