@@ -22,8 +22,18 @@ export class OAuthHelper {
     const top = window.screenY + (window.outerHeight - height) / 2;
     const popup = window.open(url, title, `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`);
     
-    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-      throw new Error('Popup was blocked by your browser. Please allow popups for this site and try again.');
+    try {
+      if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+        throw new Error('Popup was blocked by your browser. Please allow popups for this site and try again.');
+      }
+    } catch (e) {
+      if (e.message.includes('Popup was blocked')) {
+        throw e;
+      }
+      // Ignore cross-origin error when reading popup.closed
+      if (!popup) {
+        throw new Error('Popup was blocked by your browser. Please allow popups for this site and try again.');
+      }
     }
     
     return popup;
@@ -31,29 +41,46 @@ export class OAuthHelper {
 
   static waitForOAuthMessage(popup, expectedState, timeoutMs = 120000) {
     return new Promise((resolve, reject) => {
+      let bc;
+      try {
+        bc = new BroadcastChannel('oauth_channel');
+        bc.addEventListener('message', (e) => handler(e));
+      } catch (e) {
+        console.warn('BroadcastChannel not supported', e);
+      }
+
+      const storageHandler = (e) => {
+        if (e.key === 'oauth_callback_data' && e.newValue) {
+          try {
+            const data = JSON.parse(e.newValue);
+            handler({ data });
+          } catch (err) {}
+        }
+      };
+      window.addEventListener('storage', storageHandler);
+
       const timer = setTimeout(() => {
         cleanup();
         reject(new Error('OAuth timed out after 2 minutes'));
       }, timeoutMs);
 
-      const pollClosed = setInterval(() => {
-        if (popup.closed) {
-          cleanup();
-          reject(new Error('OAuth popup was closed by user'));
-        }
-      }, 500);
+      // We don't poll popup.closed aggressively because COOP same-origin makes it return true
+      // when the popup navigates cross-origin. We rely on BroadcastChannel, storage events, or the timeout.
 
       function cleanup() {
         clearTimeout(timer);
-        clearInterval(pollClosed);
         window.removeEventListener('message', handler);
+        window.removeEventListener('storage', storageHandler);
+        if (bc) bc.close();
       }
 
       function handler(event) {
         if (!event.data || event.data.type !== 'oauth_callback') return;
         if (event.data.state !== expectedState) return;
         cleanup();
-        if (popup && !popup.closed) popup.close();
+        try {
+          if (popup && !popup.closed) popup.close();
+        } catch(e) {}
         if (event.data.error) {
           reject(new Error(event.data.error_description || event.data.error));
         } else {
