@@ -196,6 +196,7 @@ export class VideoProcessor {
       let volBgmListener = null;
       let bgmObjUrl = null;
       let bgWorker = null;
+      let timeoutId = null;
 
       const cleanup = () => {
         try { if (animFrame) cancelAnimationFrame(animFrame); } catch {}
@@ -226,12 +227,18 @@ export class VideoProcessor {
       const finish = (resultOrError) => {
         if (settled) return;
         settled = true;
+        if (timeoutId) {
+          try { clearTimeout(timeoutId); } catch {}
+        }
         cleanup();
         if (resultOrError instanceof Error) reject(resultOrError);
         else resolve(resultOrError);
       };
 
-      const timer = setTimeout(() => finish(new Error(`MediaRecorder timed out (clip @${startSec}s)`)), (durationSec + 60) * 1000);
+      timeoutId = setTimeout(
+        () => finish(new Error(`MediaRecorder timed out (clip @${startSec}s)`)),
+        (durationSec + 60) * 1000,
+      );
 
       video.onerror = () => finish(new Error(`Video element error: ${video.error?.message}`));
       video.addEventListener('canplay', () => { video.currentTime = startSec; }, { once: true });
@@ -382,48 +389,66 @@ export class VideoProcessor {
               }
             };
 
-            // Try media element route first when URL or blob provided
-            let bgmReady = false;
-            if (type === 'blob' && blobId) {
+            const ensureBgmStart = (startFn) => {
               try {
-                const bgmBlob = await (await import('../storage/videoStore.js')).videoStore.getBlob(blobId);
-                if (bgmBlob) { bgmObjUrl = URL.createObjectURL(bgmBlob); }
-              } catch {}
-            }
-            try {
-              if (!bgmObjUrl && processedUrl) bgmObjUrl = processedUrl;
-              if (bgmObjUrl) {
-                bgmEl = document.createElement('audio'); bgmEl.preload = 'auto'; bgmEl.crossOrigin = 'anonymous'; bgmEl.loop = !!loop; bgmEl.src = bgmObjUrl;
-                const bSource = audioCtx.createMediaElementSource(bgmEl);
-                bSource.connect(bGain);
-                video.addEventListener('playing', () => { try { if (restartAtClipStart) bgmEl.currentTime = startOffsetSec; bgmEl.play().catch(()=>{}); } catch {} }, { once: true });
-                bindBgmSlider();
-                bgmReady = true;
-                bgmEl.addEventListener('error', () => { /* will fallback below */ }, { once: true });
-              }
-            } catch { /* fallback to buffer decode below */ }
-
-            if (!bgmReady) {
-              try {
-                if (processedUrl) {
-                  const res = await fetch(processedUrl);
-                  const arr = await res.arrayBuffer();
-                  const buf = await audioCtx.decodeAudioData(arr);
-                  const node = await audioCtx.decodeAudioData(arr).then(decoded => {
-                    const src = audioCtx.createBufferSource();
-                    src.buffer = decoded;
-                    src.loop = !!loop;
-                    src.connect(bGain);
-                    return src;
-                  });
-                  bgmBufferNode = node;
-                  video.addEventListener('playing', () => { try { node.start(0, startOffsetSec); } catch {} }, { once: true });
-                  bindBgmSlider();
+                const wrapped = () => {
+                  try { startFn(); } catch {}
+                };
+                if (!video.paused && !video.ended && video.readyState >= 2) {
+                  wrapped();
+                } else {
+                  video.addEventListener('playing', wrapped, { once: true });
                 }
-              } catch {
-                // Give up BGM, continue with original audio only
+              } catch {}
+            };
+
+            (async () => {
+              let bgmReady = false;
+              if (type === 'blob' && blobId) {
+                try {
+                  const bgmBlob = await (await import('../storage/videoStore.js')).videoStore.getBlob(blobId);
+                  if (bgmBlob) { bgmObjUrl = URL.createObjectURL(bgmBlob); }
+                } catch {}
               }
-            }
+              try {
+                if (!bgmObjUrl && processedUrl) bgmObjUrl = processedUrl;
+                if (bgmObjUrl) {
+                  bgmEl = document.createElement('audio'); bgmEl.preload = 'auto'; bgmEl.crossOrigin = 'anonymous'; bgmEl.loop = !!loop; bgmEl.src = bgmObjUrl;
+                  const bSource = audioCtx.createMediaElementSource(bgmEl);
+                  bSource.connect(bGain);
+                  ensureBgmStart(() => {
+                    if (restartAtClipStart) bgmEl.currentTime = startOffsetSec;
+                    bgmEl.play().catch(()=>{});
+                  });
+                  bindBgmSlider();
+                  bgmReady = true;
+                  bgmEl.addEventListener('error', () => { /* will fallback below */ }, { once: true });
+                }
+              } catch { /* fallback to buffer decode below */ }
+
+              if (!bgmReady) {
+                try {
+                  if (processedUrl) {
+                    const res = await fetch(processedUrl);
+                    const arr = await res.arrayBuffer();
+                    const node = await audioCtx.decodeAudioData(arr).then(decoded => {
+                      const src = audioCtx.createBufferSource();
+                      src.buffer = decoded;
+                      src.loop = !!loop;
+                      src.connect(bGain);
+                      return src;
+                    });
+                    bgmBufferNode = node;
+                    ensureBgmStart(() => {
+                      node.start(0, startOffsetSec);
+                    });
+                    bindBgmSlider();
+                  }
+                } catch {
+                  // Give up BGM, continue with original audio only
+                }
+              }
+            })();
 
             const canvasStream = canvas.captureStream(30);
             const combinedStream = dest.stream;
@@ -759,10 +784,8 @@ export class VideoProcessor {
 
         try {
           const { overlayOptions = {}, aspectRatio = 'original', audioOptions = null } = segments[i];
-          const call = audioOptions && audioOptions.bgm
-            ? this._extractClipWithAudioMix.bind(this)
-            : this._extractClipMediaRecorder.bind(this);
-          blob = await call(inputBlob, start, duration, (canvasEl) => {
+          const hasBgm = !!(audioOptions && audioOptions.bgm);
+          const previewCb = (canvasEl) => {
             const preview = document.getElementById('procLivePreview');
             if (preview) {
               const prev = preview.querySelector('canvas,video');
@@ -771,7 +794,26 @@ export class VideoProcessor {
               preview.appendChild(canvasEl);
               preview.style.display = 'block';
             }
-          }, overlayOptions, aspectRatio, audioOptions);
+          };
+
+          try {
+            const primary = hasBgm
+              ? this._extractClipWithAudioMix.bind(this)
+              : this._extractClipMediaRecorder.bind(this);
+            blob = await primary(inputBlob, start, duration, previewCb, overlayOptions, aspectRatio, audioOptions);
+          } catch (primaryErr) {
+            if (hasBgm) {
+              console.warn(`[MediaRecorder] Clip ${i + 1}/${segments.length} mix path failed, retrying without BGM:`, primaryErr?.message || primaryErr);
+              try {
+                blob = await this._extractClipMediaRecorder(inputBlob, start, duration, previewCb, overlayOptions, aspectRatio);
+              } catch (fallbackErr) {
+                console.error(`[MediaRecorder] Clip ${i + 1}/${segments.length} fallback without BGM failed:`, fallbackErr?.message || fallbackErr);
+                throw (fallbackErr instanceof Error ? fallbackErr : new Error(String(fallbackErr)));
+              }
+            } else {
+              throw (primaryErr instanceof Error ? primaryErr : new Error(String(primaryErr)));
+            }
+          }
           if (!blob || blob.size === 0) {
             console.warn(`[MediaRecorder] Clip ${i + 1} produced empty output, skipping`);
             blob = null;
