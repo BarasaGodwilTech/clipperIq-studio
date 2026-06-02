@@ -199,6 +199,16 @@ export class ClipGenerator {
       results.push(saved);
       console.log('[ClipGenerator] _saveClip done', { uploadId, index: i, clipId, blobId });
       try {
+        if (window.clipsUI && Array.isArray(window.clipsUI.clips)) {
+          window.clipsUI.clips.push(saved);
+          if (typeof window.clipsUI.renderGrid === 'function') {
+            window.clipsUI.renderGrid();
+          }
+        }
+      } catch (uiErr) {
+        console.warn('[ClipGenerator] UI update after save failed', uiErr);
+      }
+      try {
         window.dispatchEvent(new CustomEvent('clip:saved', { detail: saved }));
       } catch (evtErr) {
         console.error('[ClipGenerator] clip:saved dispatch failed', evtErr);

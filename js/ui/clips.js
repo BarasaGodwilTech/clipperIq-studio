@@ -15,7 +15,13 @@ export const clipsUI = {
   previewUrls: {},
 
   async refresh() {
-    this.clips = await db.getAll(STORES.CLIPS);
+    try {
+      this.clips = await db.getAll(STORES.CLIPS);
+      console.log('[ClipsUI] refresh loaded clips', { count: this.clips.length });
+    } catch (err) {
+      console.error('[ClipsUI] refresh failed to load clips', err);
+      this.clips = [];
+    }
     this.renderGrid();
   },
 
