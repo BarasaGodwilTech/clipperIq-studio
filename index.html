@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="css/styles.css">
 <link rel="stylesheet" href="css/components.css">
 <link rel="stylesheet" href="css/animations.css">
+<link rel="stylesheet" href="css/auth.css">
 
 <script>
 if ('serviceWorker' in navigator) {
@@ -40,9 +41,50 @@ if ('serviceWorker' in navigator) {
   <button onclick="document.getElementById('coiBanner').style.display='none'" style="background:none;border:none;color:rgba(255,255,255,0.6);cursor:pointer;font-size:16px;line-height:1">✕</button>
 </div>
 </head>
-<body>
+<body class="logged-out">
 
-<aside class="sidebar">
+<!-- ══ LOGIN ══ -->
+<div class="view" id="view-login" style="width:100%;">
+  <div class="auth-container">
+    <div class="auth-box">
+      <div class="auth-logo">
+        <div class="auth-logo-mark">ClipperIQ</div>
+        <div class="auth-logo-sub">Creator Automation Studio</div>
+      </div>
+      <div class="auth-title" id="authTitle">Sign In</div>
+      <div class="auth-error" id="authError"></div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" id="authEmail" placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input type="password" class="form-input" id="authPassword" placeholder="••••••••">
+      </div>
+      <button class="btn btn-primary" id="authBtn" style="width:100%;justify-content:center;padding:12px;font-size:14px;margin-top:8px">
+        Sign In
+      </button>
+
+      <div style="display:flex;align-items:center;margin:20px 0;color:var(--muted);font-size:12px;">
+        <div style="flex:1;height:1px;background:var(--border);"></div>
+        <div style="padding:0 12px;">or continue with</div>
+        <div style="flex:1;height:1px;background:var(--border);"></div>
+      </div>
+
+      <button class="btn btn-ghost" id="authGoogleBtn" style="width:100%;justify-content:center;padding:12px;font-size:14px;background:var(--bg3);border:1px solid var(--border);">
+        <svg width="18" height="18" viewBox="0 0 24 24" style="margin-right:8px"><path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.27 0 3.198 2.698 1.24 6.65l4.026 3.115Z"/><path fill="#34A853" d="M16.04 18.013c-1.09.703-2.474 1.078-4.04 1.078a7.077 7.077 0 0 1-6.723-4.823l-4.04 3.067A11.965 11.965 0 0 0 12 24c2.933 0 5.735-1.043 7.834-3l-3.793-2.987Z"/><path fill="#4A90E2" d="M19.834 21c2.195-2.048 3.62-5.096 3.62-9 0-.71-.109-1.473-.272-2.182H12v4.637h6.436c-.317 1.559-1.17 2.766-2.395 3.558L19.834 21Z"/><path fill="#FBBC05" d="M5.277 14.268A7.12 7.12 0 0 1 4.909 12c0-.782.125-1.533.357-2.235L1.24 6.65A11.934 11.934 0 0 0 0 12c0 1.92.445 3.73 1.237 5.335l4.04-3.067Z"/></svg>
+        Google
+      </button>
+
+      <div class="auth-toggle">
+        <span id="authToggleText">Don't have an account?</span> 
+        <a id="authToggleBtn">Create one</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<aside class="sidebar" id="mainSidebar" style="display:none;">
   <div class="logo">
     <div class="logo-mark">ClipperIQ</div>
     <div class="logo-sub">Creator Automation Studio</div>
@@ -87,18 +129,19 @@ if ('serviceWorker' in navigator) {
       Settings
     </button>
   </nav>
-  <div class="sidebar-footer">
-    <div class="user-pill">
-      <div class="avatar">CI</div>
+    <div class="sidebar-footer">
+    <div class="user-pill" style="margin-bottom:8px">
+      <div class="avatar" id="userAvatar">U</div>
       <div>
-        <div class="user-name">ClipperIQ Studio</div>
+        <div class="user-name" id="userEmailDisplay">User</div>
         <div class="user-plan" id="schedulerStatus">Scheduler active</div>
       </div>
     </div>
+    <button class="btn btn-ghost btn-sm" id="logoutBtn" style="width:100%;justify-content:center;color:var(--danger)">Logout</button>
   </div>
 </aside>
 
-<div class="main">
+<div class="main" id="mainContent" style="display:none;">
   <header class="topbar">
     <div class="page-title" id="pageTitle">Dashboard</div>
     <div class="topbar-actions">
@@ -115,7 +158,7 @@ if ('serviceWorker' in navigator) {
   <div class="content">
 
     <!-- ══ DASHBOARD ══ -->
-    <div class="view active" id="view-dashboard">
+    <div class="view" id="view-dashboard">
       <div class="section-header">
         <div>
           <div class="section-title" id="dashGreeting">Good morning 👋</div>
@@ -620,14 +663,14 @@ if ('serviceWorker' in navigator) {
       </div>
 
       <div id="settingsTabs" class="tabs">
-        <div class="tab active" data-tab="0">API Keys</div>
-        <div class="tab" data-tab="1">Processing</div>
+        <div class="tab" id="tabApiKeys" data-tab="0" style="display:none">API Keys</div>
+        <div class="tab active" data-tab="1">Processing</div>
         <div class="tab" data-tab="2">Notifications</div>
         <div class="tab" data-tab="3">About</div>
       </div>
 
       <!-- API Keys -->
-      <div id="settingsTab-0">
+      <div id="settingsTab-0" style="display:none">
         <div class="card" style="margin-bottom:16px">
           <div class="card-title">TikTok API</div>
           <div class="form-group">
@@ -669,7 +712,7 @@ if ('serviceWorker' in navigator) {
       </div>
 
       <!-- Processing -->
-      <div id="settingsTab-1" style="display:none">
+      <div id="settingsTab-1">
         <div class="card">
           <div class="card-title">Video Processing</div>
           <div class="toggle-row">

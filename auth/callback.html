@@ -44,7 +44,14 @@
   }
 
   if (!target) {
-    showError('This page must be opened as a popup from ClipperIQ.');
+    showError(`
+      <strong>This page must be opened as a popup from ClipperIQ.</strong><br><br>
+      Possible causes:<br>
+      • Popup blocker is enabled in your browser<br>
+      • The popup was opened in a new tab instead of a popup window<br>
+      • The main ClipperIQ window was closed before authorization completed<br><br>
+      <strong>Solution:</strong> Allow popups for this site in your browser settings, then try connecting again from the Accounts page.
+    `);
     return;
   }
 

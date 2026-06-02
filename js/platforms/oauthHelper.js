@@ -20,7 +20,13 @@ export class OAuthHelper {
   static openPopup(url, title = 'OAuth', width = 600, height = 700) {
     const left = window.screenX + (window.outerWidth - width) / 2;
     const top = window.screenY + (window.outerHeight - height) / 2;
-    return window.open(url, title, `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`);
+    const popup = window.open(url, title, `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`);
+    
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      throw new Error('Popup was blocked by your browser. Please allow popups for this site and try again.');
+    }
+    
+    return popup;
   }
 
   static waitForOAuthMessage(popup, expectedState, timeoutMs = 120000) {
