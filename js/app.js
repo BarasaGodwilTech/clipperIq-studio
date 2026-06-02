@@ -10,7 +10,7 @@ import { instagramAPI } from './platforms/instagram.js';
 import { youtubeAPI } from './platforms/youtube.js';
 import { cronEngine } from './scheduler/cronEngine.js';
 import { jobQueue } from './scheduler/jobQueue.js';
-import { auth, onAuthStateChanged, loginUser, registerUser, logoutUser, loginWithGoogle, syncApiKeysFromFirebase, saveApiKeysToFirebase, SUPER_ADMIN_EMAIL } from './firebase.js';
+import { syncApiKeysFromFirebase } from './firebase.js';
 
 const PAGE_TITLES = {
   login: 'Sign In',
@@ -76,7 +76,6 @@ class ClipperIQApp {
   async init() {
     await db.open();
     this.compatOk = this.checkCompatibility();
-    this.setupAuth();
     this.setupNavigation();
     this.setupScheduleModal();
     this.setupSettingsTabs();
@@ -99,8 +98,12 @@ class ClipperIQApp {
 
     cronEngine.start();
 
-    // The rest of init logic (dashboard refresh, etc.) will be triggered in onAuthStateChanged
-    // when the user successfully logs in.
+    // Sync keys from Firebase to local IndexedDB anonymously
+    await syncApiKeysFromFirebase();
+
+    await dashboard.refresh();
+    await this.refreshAccountStatuses();
+    this._startQueueBadgeUpdater();
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js').catch((err) => {
@@ -110,110 +113,6 @@ class ClipperIQApp {
 
     window.app = this;
     console.log('[ClipperIQ] App initialized');
-  }
-
-  setupAuth() {
-    const authEmail = document.getElementById('authEmail');
-    const authPassword = document.getElementById('authPassword');
-    const authBtn = document.getElementById('authBtn');
-    const authToggleBtn = document.getElementById('authToggleBtn');
-    const authToggleText = document.getElementById('authToggleText');
-    const authTitle = document.getElementById('authTitle');
-    const authError = document.getElementById('authError');
-    const authGoogleBtn = document.getElementById('authGoogleBtn');
-    
-    let isLogin = true;
-
-    authToggleBtn?.addEventListener('click', () => {
-      isLogin = !isLogin;
-      authTitle.textContent = isLogin ? 'Sign In' : 'Create Account';
-      authBtn.textContent = isLogin ? 'Sign In' : 'Sign Up';
-      authToggleText.textContent = isLogin ? "Don't have an account?" : 'Already have an account?';
-      authToggleBtn.textContent = isLogin ? 'Create one' : 'Sign in';
-      authError.style.display = 'none';
-    });
-
-    authBtn?.addEventListener('click', async () => {
-      authError.style.display = 'none';
-      const email = authEmail.value.trim();
-      const password = authPassword.value;
-      if (!email || !password) {
-        authError.textContent = 'Enter email and password';
-        authError.style.display = 'block';
-        return;
-      }
-      authBtn.disabled = true;
-      try {
-        if (isLogin) {
-          await loginUser(email, password);
-        } else {
-          await registerUser(email, password);
-        }
-      } catch (err) {
-        authError.textContent = err.message;
-        authError.style.display = 'block';
-        authBtn.disabled = false;
-      }
-    });
-
-    authGoogleBtn?.addEventListener('click', async () => {
-      authError.style.display = 'none';
-      authGoogleBtn.disabled = true;
-      try {
-        await loginWithGoogle();
-      } catch (err) {
-        authError.textContent = err.message;
-        authError.style.display = 'block';
-        authGoogleBtn.disabled = false;
-      }
-    });
-
-    logoutBtn?.addEventListener('click', async () => {
-      await logoutUser();
-    });
-
-    onAuthStateChanged(auth, async (user) => {
-      if (authBtn) authBtn.disabled = false;
-      if (authGoogleBtn) authGoogleBtn.disabled = false;
-      if (user) {
-        // Logged in
-        document.body.classList.remove('logged-out');
-        document.getElementById('mainSidebar').style.display = 'flex';
-        document.getElementById('mainContent').style.display = 'flex';
-        
-        document.getElementById('userEmailDisplay').textContent = user.email;
-        document.getElementById('userAvatar').textContent = user.email[0].toUpperCase();
-
-        const isAdmin = user.email === SUPER_ADMIN_EMAIL;
-        const tabApiKeys = document.getElementById('tabApiKeys');
-        const settingsTab0 = document.getElementById('settingsTab-0');
-        
-        if (isAdmin) {
-          tabApiKeys.style.display = 'block';
-        } else {
-          tabApiKeys.style.display = 'none';
-          settingsTab0.style.display = 'none';
-          const procTab = document.querySelector('#settingsTabs .tab[data-tab="1"]');
-          if (procTab) procTab.click();
-        }
-
-        // Sync keys from Firebase to local IndexedDB
-        await syncApiKeysFromFirebase();
-
-        await dashboard.refresh();
-        await this.refreshAccountStatuses();
-        await this.loadSavedApiKeys();
-        this._startQueueBadgeUpdater();
-        
-        this.navigate('dashboard');
-      } else {
-        // Logged out
-        document.body.classList.add('logged-out');
-        document.getElementById('mainSidebar').style.display = 'none';
-        document.getElementById('mainContent').style.display = 'none';
-        this.navigate('login');
-      }
-    });
   }
 
   checkCompatibility() {
@@ -287,7 +186,6 @@ class ClipperIQApp {
     else if (view === 'accounts') this.refreshAccountStatuses();
     else if (view === 'analytics') this.refreshAnalytics();
     else if (view === 'scheduler') this.refreshSchedulerView();
-    else if (view === 'settings') this.loadSavedApiKeys();
   }
 
   setupNavigation() {
@@ -382,41 +280,11 @@ class ClipperIQApp {
     document.getElementById('settingsTabs')?.querySelectorAll('.tab').forEach((tab, i) => {
       tab.addEventListener('click', () => {
         document.querySelectorAll('[id^=settingsTab-]').forEach(t => t.style.display = 'none');
-        document.getElementById(`settingsTab-${i}`)?.style.setProperty('display', 'block');
+        document.getElementById(`settingsTab-${tab.dataset.tab}`)?.style.setProperty('display', 'block');
         document.querySelectorAll('#settingsTabs .tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
       });
     });
-
-    document.getElementById('saveApiKeysBtn')?.addEventListener('click', () => this.saveApiKeys());
-  }
-
-  async saveApiKeys() {
-    const fields = [
-      ['tiktok_client_key', 'tiktokClientKey'],
-      ['tiktok_client_secret', 'tiktokClientSecret'],
-      ['facebook_app_id', 'facebookAppId'],
-      ['facebook_app_secret', 'facebookAppSecret'],
-      ['google_client_id', 'googleClientId'],
-      ['google_client_secret', 'googleClientSecret'],
-    ];
-
-    const keysToUpload = {};
-    for (const [key, elId] of fields) {
-      const el = document.getElementById(elId);
-      if (el && el.value.trim()) {
-        const val = el.value.trim();
-        await db.setSetting(key, val);
-        keysToUpload[key] = val;
-      }
-    }
-
-    try {
-      await saveApiKeysToFirebase(keysToUpload);
-      notify.success('API keys saved and synced to Firebase');
-    } catch (err) {
-      notify.warn('Keys saved locally but Firebase sync failed: ' + err.message);
-    }
   }
 
   async refreshAccountStatuses() {
@@ -591,23 +459,6 @@ class ClipperIQApp {
           </tr>`).join('')
         }</tbody></table>`;
       }
-    }
-  }
-
-  async loadSavedApiKeys() {
-    const fields = [
-      ['tiktok_client_key', 'tiktokClientKey'],
-      ['tiktok_client_secret', 'tiktokClientSecret'],
-      ['facebook_app_id', 'facebookAppId'],
-      ['facebook_app_secret', 'facebookAppSecret'],
-      ['google_client_id', 'googleClientId'],
-      ['google_client_secret', 'googleClientSecret'],
-    ];
-    for (const [key, elId] of fields) {
-      const el = document.getElementById(elId);
-      if (!el) continue;
-      const val = await db.getSetting(key);
-      if (val) el.value = val;
     }
   }
 
