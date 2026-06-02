@@ -317,11 +317,29 @@ export class VideoProcessor {
             monitorGain.gain.value = 0.001;
             monitorGain.connect(audioCtx.destination);
 
-            const vSource = audioCtx.createMediaElementSource(video);
-            const vGain = audioCtx.createGain();
-            vGain.gain.value = typeof audioOptions.originalVolume === 'number' ? audioOptions.originalVolume : 1.0;
-            vSource.connect(vGain).connect(dest);
-            vGain.connect(monitorGain);
+            let vGain = null;
+            {
+              let vSourceNode = null;
+              try {
+                vSourceNode = audioCtx.createMediaElementSource(video);
+              } catch (err) {
+                const msg = String((err && err.message) || err || '');
+                if (msg.includes('HTMLMediaElement already connected previously')) {
+                  const captureFn = video.captureStream?.bind(video) || video.mozCaptureStream?.bind(video);
+                  if (!captureFn) throw err;
+                  const videoRawStream = captureFn();
+                  vSourceNode = audioCtx.createMediaStreamSource(videoRawStream);
+                } else {
+                  throw err;
+                }
+              }
+              vGain = audioCtx.createGain();
+              vGain.gain.value = typeof audioOptions.originalVolume === 'number'
+                ? audioOptions.originalVolume
+                : 1.0;
+              vSourceNode.connect(vGain).connect(dest);
+              vGain.connect(monitorGain);
+            }
 
             // Live slider binding (optional, for interactive UI sessions)
             if (!audioOptions || audioOptions.bindSliders !== false) {
