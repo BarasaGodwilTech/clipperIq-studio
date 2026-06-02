@@ -36,7 +36,7 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 <div id="coiBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9998;background:rgba(124,92,252,0.95);color:#fff;padding:10px 20px;font-size:13px;align-items:center;gap:12px;font-family:'DM Sans',sans-serif">
-  <span>⚡ Service worker installed — <strong>reload once</strong> to enable FFmpeg video processing (COOP/COEP headers)</span>
+  <span>⚡ System initialized — <strong>reload once</strong> to enable video processing</span>
   <button onclick="location.reload()" style="background:#fff;color:#7c5cfc;border:none;padding:5px 14px;border-radius:6px;font-weight:600;cursor:pointer;font-size:12px">Reload Now</button>
   <button onclick="document.getElementById('coiBanner').style.display='none'" style="background:none;border:none;color:rgba(255,255,255,0.6);cursor:pointer;font-size:16px;line-height:1">✕</button>
 </div>
@@ -324,8 +324,8 @@ if ('serviceWorker' in navigator) {
             <div class="form-group" style="margin-bottom:0">
               <label class="form-label">Output Format</label>
               <select class="form-input form-select" id="outputFormat">
-                <option value="copy">Fast MediaRecorder (recommended)</option>
-                <option value="reencode">Re-encode with FFmpeg (slow, small files only)</option>
+                <option value="copy">Fast Mode (recommended)</option>
+                <option value="reencode">High Compatibility Mode (slower)</option>
               </select>
             </div>
           </div>
@@ -340,7 +340,7 @@ if ('serviceWorker' in navigator) {
 
           <button class="btn btn-primary" id="processBtn" disabled style="margin-top:16px;width:100%;justify-content:center;padding:12px;font-size:14px;opacity:.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Generate Clips with FFmpeg
+            Generate Clips
           </button>
         </div>
 
@@ -350,33 +350,30 @@ if ('serviceWorker' in navigator) {
             <div style="display:flex;flex-direction:column;gap:14px;font-size:13px;color:var(--muted)">
               <div style="display:flex;gap:10px;align-items:flex-start">
                 <span style="color:var(--accent2);font-weight:700;flex-shrink:0">1</span>
-                <span><strong style="color:var(--text)">Audio Analysis</strong> — Web Audio API detects high-energy moments and audio peaks</span>
+                <span><strong style="color:var(--text)">Audio Analysis</strong> — Detects high-energy moments and audio peaks</span>
               </div>
               <div style="display:flex;gap:10px;align-items:flex-start">
                 <span style="color:var(--accent2);font-weight:700;flex-shrink:0">2</span>
-                <span><strong style="color:var(--text)">Scene Detection</strong> — Canvas API compares frames to find natural cut points</span>
+                <span><strong style="color:var(--text)">Scene Detection</strong> — Compares frames to find natural cut points</span>
               </div>
               <div style="display:flex;gap:10px;align-items:flex-start">
                 <span style="color:var(--accent2);font-weight:700;flex-shrink:0">3</span>
-                <span><strong style="color:var(--text)">Scoring Algorithm</strong> — Combines audio (40%) + scene (30%) + position (30%) to rank clips</span>
+                <span><strong style="color:var(--text)">Scoring Algorithm</strong> — Combines audio + scene + position to rank clips</span>
               </div>
               <div style="display:flex;gap:10px;align-items:flex-start">
                 <span style="color:var(--accent2);font-weight:700;flex-shrink:0">4</span>
-                <span><strong style="color:var(--text)">FFmpeg.wasm</strong> — Extracts clips client-side, no server needed. Files stored in IndexedDB</span>
+                <span><strong style="color:var(--text)">Auto-Extraction</strong> — Generates clips automatically on your device</span>
               </div>
             </div>
           </div>
 
           <div class="card" style="border-color:rgba(124,92,252,0.25)">
-            <div class="card-title" style="color:var(--accent2)">⚡ FFmpeg Status</div>
+            <div class="card-title" style="color:var(--accent2)">⚡ Processing Engine</div>
             <div style="font-size:13px;color:var(--muted)">
-              FFmpeg.wasm loads on first use from CDN (~30MB). Subsequent loads are cached by the service worker.
+              Engine loads automatically on first use.
             </div>
             <div style="margin-top:12px;padding:10px;background:var(--bg3);border-radius:var(--radius);font-size:12px;color:var(--dim);font-family:monospace" id="ffmpegStatus">
-              Ready to load
-            </div>
-            <div style="margin-top:10px;font-size:11px;color:var(--dim)">
-              Requires SharedArrayBuffer (COOP/COEP headers — enabled by service worker)
+              Ready
             </div>
           </div>
         </div>
@@ -388,7 +385,7 @@ if ('serviceWorker' in navigator) {
       <div class="section-header">
         <div>
           <div class="section-title">Generated Clips</div>
-          <div class="section-sub">Real clips extracted by FFmpeg from your uploaded videos</div>
+          <div class="section-sub">Clips automatically extracted from your uploaded videos</div>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost btn-sm" onclick="window.clipsUI?.refresh()">↻ Refresh</button>
@@ -539,7 +536,7 @@ if ('serviceWorker' in navigator) {
         </div>
       </div>
 
-      <div class="grid-2">
+      <div style="max-width: 600px;">
         <div>
           <div class="account-card">
             <div class="platform-icon pi-tt">
@@ -586,31 +583,6 @@ if ('serviceWorker' in navigator) {
             <button class="btn btn-danger btn-sm" id="yt-disconnect" style="display:none" onclick="window.app?.disconnectPlatform('YouTube')">Disconnect</button>
           </div>
         </div>
-
-        <div>
-          <div class="card">
-            <div class="card-title">OAuth Requirements</div>
-            <div style="display:flex;flex-direction:column;gap:12px;font-size:13px;color:var(--muted)">
-              <div>
-                <div style="color:var(--text);font-weight:500;margin-bottom:4px">Before connecting accounts:</div>
-                <ol style="padding-left:16px;display:flex;flex-direction:column;gap:6px">
-                  <li>Register your app in each platform's developer portal</li>
-                  <li>Add <code style="background:var(--bg3);padding:2px 6px;border-radius:4px;font-size:11px">${window.location.origin}/auth/callback.html</code> as a redirect URI</li>
-                  <li>Enter API keys in <strong style="color:var(--accent2)">Settings → API Keys</strong></li>
-                  <li>This app must be served over <strong>HTTPS</strong> (or localhost)</li>
-                </ol>
-              </div>
-              <div>
-                <div style="color:var(--text);font-weight:500;margin-bottom:4px">Developer portals:</div>
-                <div style="display:flex;flex-direction:column;gap:4px">
-                  <a href="https://developers.tiktok.com" target="_blank" style="color:var(--tiktok)">→ TikTok for Developers</a>
-                  <a href="https://developers.facebook.com" target="_blank" style="color:var(--insta)">→ Meta for Developers</a>
-                  <a href="https://console.cloud.google.com" target="_blank" style="color:var(--youtube)">→ Google Cloud Console</a>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -632,22 +604,22 @@ if ('serviceWorker' in navigator) {
           <div class="card-title">Video Processing</div>
           <div class="toggle-row">
             <div class="toggle-info">
-              <div class="toggle-title">Re-encode for vertical (9:16)</div>
-              <div class="toggle-desc">Re-encodes clips to vertical format — slower but ensures compatibility</div>
+              <div class="toggle-title">High Compatibility Mode (9:16)</div>
+              <div class="toggle-desc">Ensures perfect vertical format — slower but highly compatible</div>
             </div>
             <label class="toggle-switch"><input type="checkbox" id="settingReEncode"><span class="toggle-slider"></span></label>
           </div>
           <div class="toggle-row">
             <div class="toggle-info">
               <div class="toggle-title">Add 0.5s end card</div>
-              <div class="toggle-desc">Optional fade-out end card. Copyright notices go in captions only.</div>
+              <div class="toggle-desc">Optional fade-out end card.</div>
             </div>
             <label class="toggle-switch"><input type="checkbox" id="settingEndCard"><span class="toggle-slider"></span></label>
           </div>
           <div class="toggle-row" style="border:none">
             <div class="toggle-info">
-              <div class="toggle-title">Use Web Workers for FFmpeg</div>
-              <div class="toggle-desc">Process video in a background thread (requires HTTPS)</div>
+              <div class="toggle-title">Background Processing</div>
+              <div class="toggle-desc">Process video in the background while you do other things</div>
             </div>
             <label class="toggle-switch"><input type="checkbox" checked id="settingWebWorker"><span class="toggle-slider"></span></label>
           </div>
@@ -679,14 +651,10 @@ if ('serviceWorker' in navigator) {
           <div class="card-title">About ClipperIQ Studio</div>
           <div style="font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:8px">
             <div><strong style="color:var(--text)">Version:</strong> 1.0.0</div>
-            <div><strong style="color:var(--text)">FFmpeg.wasm:</strong> @ffmpeg/ffmpeg@0.12.10 + @ffmpeg/core@0.12.6</div>
-            <div><strong style="color:var(--text)">Storage:</strong> IndexedDB (no server required)</div>
-            <div><strong style="color:var(--text)">Scheduler:</strong> 60-second polling with exponential backoff retry</div>
-            <div><strong style="color:var(--text)">OAuth:</strong> PKCE (TikTok, YouTube), Authorization Code (Instagram)</div>
-            <div><strong style="color:var(--text)">Processing:</strong> Client-side only — videos never leave your browser</div>
+            <div><strong style="color:var(--text)">Processing:</strong> Private & secure — videos never leave your browser</div>
           </div>
           <div style="margin-top:16px;display:flex;gap:8px">
-            <button class="btn btn-danger btn-sm" onclick="if(confirm('Clear all clips and posts? API keys preserved.')) window.app?.clearData()">Clear Data</button>
+            <button class="btn btn-danger btn-sm" onclick="if(confirm('Clear all clips and posts?')) window.app?.clearData()">Clear Data</button>
           </div>
         </div>
       </div>
@@ -700,7 +668,7 @@ if ('serviceWorker' in navigator) {
   <div class="processing-box">
     <div class="proc-spinner"></div>
     <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:18px" id="procTitle">Processing Video</div>
-    <div class="proc-step" id="procSub">Initializing FFmpeg...</div>
+    <div class="proc-step" id="procSub">Initializing Engine...</div>
     <div class="proc-steps-list" id="procSteps"></div>
 
     <div id="procLivePreview" style="display:none;margin:14px 0 0;border-radius:8px;overflow:hidden;background:#0a0a0f;position:relative;min-height:90px;border:1px solid rgba(124,92,252,0.25)">

@@ -62,11 +62,11 @@ export class VideoProcessor {
 
     try {
       if (!self.crossOriginIsolated) {
-        setStatus('⚠ Reload required for SharedArrayBuffer (COOP/COEP headers)');
+        setStatus('⚠ Reload required for high-speed processing');
         console.warn('[FFmpeg] crossOriginIsolated is false. Reload the page after service worker installs.');
       }
 
-      setStatus('Loading FFmpeg.wasm module...');
+      setStatus('Loading core processing module...');
 
       const { FFmpeg } = await import(/* @vite-ignore */ FFMPEG_ESM_URL);
       if (!FFmpeg) throw new Error('FFmpeg class not found in ESM bundle');
@@ -81,23 +81,23 @@ export class VideoProcessor {
         if (this.onProgress) this.onProgress(Math.min(progress * 100, 99));
       });
 
-      setStatus('Fetching FFmpeg worker script...');
+      setStatus('Fetching processing worker...');
       const classWorkerURL = await toBlobURL(FFMPEG_WORKER_URL, 'text/javascript');
       this._blobURLs.push(classWorkerURL);
 
-      setStatus('Fetching FFmpeg core JS (~1MB)...');
+      setStatus('Fetching processing core...');
       const coreURL = await toBlobURL(CORE_JS_URL, 'text/javascript');
       this._blobURLs.push(coreURL);
 
-      setStatus('Fetching FFmpeg core WASM (~31MB)...');
+      setStatus('Fetching processing engine...');
       const wasmURL = await toBlobURL(CORE_WASM_URL, 'application/wasm');
       this._blobURLs.push(wasmURL);
 
-      setStatus('Initializing FFmpeg engine...');
+      setStatus('Initializing engine...');
       await this.ffmpeg.load({ classWorkerURL, coreURL, wasmURL });
 
       this.loaded = true;
-      setStatus('FFmpeg ready ✓');
+      setStatus('Engine ready ✓');
       console.log('[FFmpeg] Loaded successfully');
     } finally {
       this.loading = false;
