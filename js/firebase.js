@@ -5,13 +5,14 @@ import { db as localDb } from "./storage/db.js";
 
 // TODO: Replace with your actual Firebase project configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDummyKeyForNowPleaseReplaceMe1234",
-  authDomain: "clipperiq-dummy.firebaseapp.com",
-  projectId: "clipperiq-dummy",
-  storageBucket: "clipperiq-dummy.appspot.com",
-  messagingSenderId: "123456789012",
-  appId: "1:123456789012:web:abcdef1234567890"
+  apiKey: "AIzaSyAGOdj5KjOiespwIm4uy2CR25CLVI3JP9s",
+  authDomain: "clipperiq-da448.firebaseapp.com",
+  projectId: "clipperiq-da448",
+  storageBucket: "clipperiq-da448.firebasestorage.app",
+  messagingSenderId: "970532047088",
+  appId: "1:970532047088:web:81f33d1d10779ec5da1a35"
 };
+
 
 // The email address that has Super Admin privileges (can save API keys)
 export const SUPER_ADMIN_EMAIL = "barasagodwil@gmail.com";
