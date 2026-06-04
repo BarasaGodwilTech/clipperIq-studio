@@ -331,20 +331,13 @@ export class VideoProcessor {
             let vGain = null;
             {
               let vSourceNode = null;
-              try {
+              const captureFn = video.captureStream?.bind(video) || video.mozCaptureStream?.bind(video);
+              if (captureFn) {
+                try { video.volume = 1.0; } catch {}
+                const videoRawStream = captureFn();
+                vSourceNode = audioCtx.createMediaStreamSource(videoRawStream);
+              } else {
                 vSourceNode = audioCtx.createMediaElementSource(video);
-              } catch (err) {
-                const msg = String((err && err.message) || err || '');
-                if (msg.includes('HTMLMediaElement already connected previously')) {
-                  const captureFn = video.captureStream?.bind(video) || video.mozCaptureStream?.bind(video);
-                  if (!captureFn) throw err;
-                  // Ensure the element has audible volume for captureStream path
-                  try { video.volume = 1.0; } catch {}
-                  const videoRawStream = captureFn();
-                  vSourceNode = audioCtx.createMediaStreamSource(videoRawStream);
-                } else {
-                  throw err;
-                }
               }
               vGain = audioCtx.createGain();
               vGain.gain.value = typeof audioOptions.originalVolume === 'number'
