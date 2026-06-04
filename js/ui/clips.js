@@ -231,6 +231,10 @@ export const clipsUI = {
     const clip = this.clips.find(c => c.id === id);
     if (!clip) return;
     try {
+      if (this._mixPreviewCleanup) {
+        try { this._mixPreviewCleanup(); } catch {}
+        this._mixPreviewCleanup = null;
+      }
       const origVolPct = parseInt(document.getElementById('mixOrigVol')?.value || '100');
       const originalVolume = Math.max(0, Math.min(1, origVolPct / 100));
       const en = !!document.getElementById('mixBgmEnable')?.checked;
@@ -239,6 +243,7 @@ export const clipsUI = {
       const bgmFile = bgmFileEl && bgmFileEl.files && bgmFileEl.files[0] ? bgmFileEl.files[0] : null;
       const bgmVolPct = parseInt(document.getElementById('mixBgmVol')?.value || '25');
       const bgmVolume = Math.max(0, Math.min(1, bgmVolPct / 100));
+      const restart = !!document.getElementById('mixBgmRestart')?.checked;
 
       let processedUrl = url;
       if (processedUrl && processedUrl.match(/tiktok\.com|youtube\.com|youtu\.be/i)) {
@@ -248,9 +253,11 @@ export const clipsUI = {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const dest = ctx.destination;
       const clipBlob = await videoStore.getBlob(clip.blobId);
+      const clipObjUrl = URL.createObjectURL(clipBlob);
       const v = document.createElement('video');
-      v.src = URL.createObjectURL(clipBlob);
+      v.src = clipObjUrl;
       v.muted = true; v.playsInline = true;
+      if (ctx.state === 'suspended') { try { await ctx.resume(); } catch {} }
       await v.play().catch(()=>{});
       const vSrc = ctx.createMediaElementSource(v);
       const vGain = ctx.createGain(); vGain.gain.value = originalVolume; vSrc.connect(vGain).connect(dest);
@@ -260,17 +267,23 @@ export const clipsUI = {
         try {
           if (bgmFile) {
             const buf = await ctx.decodeAudioData(await bgmFile.arrayBuffer());
-            const n = ctx.createBufferSource(); n.buffer = buf; n.loop = true; n.connect(bGain); n.start(0);
+            const n = ctx.createBufferSource(); n.buffer = buf; n.loop = true; n.connect(bGain); n.start(0, restart ? 0 : 0);
+            this._mixPreviewCleanup = () => { try { n.stop(); } catch {}; try { v.pause(); } catch {}; try { v.src = ''; URL.revokeObjectURL(clipObjUrl); } catch {}; try { ctx.close(); } catch {}; };
           } else if (processedUrl) {
             try {
               const res = await fetch(processedUrl); const arr = await res.arrayBuffer();
-              const buf = await ctx.decodeAudioData(arr); const n = ctx.createBufferSource(); n.buffer = buf; n.loop = true; n.connect(bGain); n.start(0);
+              const buf = await ctx.decodeAudioData(arr); const n = ctx.createBufferSource(); n.buffer = buf; n.loop = true; n.connect(bGain); n.start(0, restart ? 0 : 0);
+              this._mixPreviewCleanup = () => { try { n.stop(); } catch {}; try { v.pause(); } catch {}; try { v.src = ''; URL.revokeObjectURL(clipObjUrl); } catch {}; try { ctx.close(); } catch {}; };
             } catch {
-              const el = document.createElement('audio'); el.crossOrigin = 'anonymous'; el.src = processedUrl; await el.play().catch(()=>{});
+              const el = document.createElement('audio'); el.crossOrigin = 'anonymous'; el.src = processedUrl; if (restart) { try { el.currentTime = 0; } catch {} } await el.play().catch(()=>{});
               const m = ctx.createMediaElementSource(el); m.connect(bGain);
+              this._mixPreviewCleanup = () => { try { el.pause(); } catch {}; try { v.pause(); } catch {}; try { v.src = ''; URL.revokeObjectURL(clipObjUrl); } catch {}; try { ctx.close(); } catch {}; };
             }
           }
         } catch {}
+      }
+      if (!this._mixPreviewCleanup) {
+        this._mixPreviewCleanup = () => { try { v.pause(); } catch {}; try { v.src = ''; URL.revokeObjectURL(clipObjUrl); } catch {}; try { ctx.close(); } catch {}; };
       }
     } catch (e) {
       console.warn('Preview mix failed', e);
@@ -381,13 +394,34 @@ export const clipsUI = {
       const preview = document.getElementById(`clip-preview-${clip.id}`);
       if (preview) {
         const video = document.createElement('video');
+        video.preload = 'metadata';
         video.src = url;
         video.muted = true;
-        video.currentTime = 0.5;
-        video.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0;';
-        preview.style.position = 'relative';
-        preview.insertBefore(video, preview.firstChild);
-        preview.querySelector('div[style*="font-size:28px"]')?.remove();
+        video.playsInline = true;
+        const draw = () => {
+          if (!document.getElementById(`clip-preview-${clip.id}`)) return;
+          const w = preview.clientWidth || 320;
+          const h = preview.clientHeight || 180;
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          const vw = video.videoWidth || w; const vh = video.videoHeight || h;
+          const arV = vw / vh; const arC = w / h;
+          let sx = 0, sy = 0, sw = vw, sh = vh;
+          if (arV > arC) { const newW = sh * arC; sx = (sw - newW) / 2; sw = newW; }
+          else { const newH = sw / arC; sy = (sh - newH) / 2; sh = newH; }
+          ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h);
+          ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+          canvas.style.cssText = 'width:100%;height:100%;position:absolute;top:0;left:0;';
+          preview.style.position = 'relative';
+          preview.insertBefore(canvas, preview.firstChild);
+          const ph = preview.querySelector('div[style*="font-size:28px"]'); if (ph) ph.remove();
+          video.src = '';
+          video.load();
+        };
+        video.addEventListener('loadeddata', () => { try { video.currentTime = 0.5; } catch { draw(); } }, { once: true });
+        video.addEventListener('seeked', draw, { once: true });
+        if (video.readyState >= 2) { draw(); }
       }
     } catch {
     }

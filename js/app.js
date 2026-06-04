@@ -217,26 +217,35 @@ class ClipperIQApp {
       const clip = clipsUI.clips.find(c => c.id === clipId);
       if (!clip) { notify.error('Clip not found'); return; }
 
-      const connected = await authStore.isConnected(platform.toLowerCase());
-      if (!connected) {
-        notify.warn(`${platform} is not connected. Go to Accounts to connect.`);
-        return;
-      }
-
       try {
-        await jobQueue.add({
-          clipId,
-          blobId: clip.blobId,
-          platform,
-          caption,
-          scheduledAt,
-          options: {
-            privacy: document.getElementById('schedulePrivacy')?.value || 'public',
-          },
-        });
+        const privacy = document.getElementById('schedulePrivacy')?.value || 'public';
+        if (platform === 'All') {
+          const candidates = [
+            { name: 'TikTok', key: 'tiktok' },
+            { name: 'Instagram', key: 'instagram' },
+            { name: 'YouTube', key: 'youtube' },
+          ];
+          const targets = [];
+          for (const p of candidates) {
+            if (await authStore.isConnected(p.key)) targets.push(p.name);
+          }
+          if (targets.length === 0) {
+            notify.warn('No connected platforms. Connect accounts in the Accounts tab.');
+            return;
+          }
+          for (const name of targets) {
+            await jobQueue.add({ clipId, blobId: clip.blobId, platform: name, caption, scheduledAt, options: { privacy } });
+          }
+          modal.classList.remove('show');
+          notify.success(`Scheduled on ${targets.join(', ')} for ${new Date(scheduledAt).toLocaleString()}`);
+        } else {
+          const connected = await authStore.isConnected(platform.toLowerCase());
+          if (!connected) { notify.warn(`${platform} is not connected. Go to Accounts to connect.`); return; }
+          await jobQueue.add({ clipId, blobId: clip.blobId, platform, caption, scheduledAt, options: { privacy } });
+          modal.classList.remove('show');
+          notify.success(`Scheduled for ${new Date(scheduledAt).toLocaleString()}`);
+        }
 
-        modal.classList.remove('show');
-        notify.success(`Scheduled for ${new Date(scheduledAt).toLocaleString()}`);
         await queueUI.refresh();
 
         const badge = document.querySelector('.nav-item[data-view="queue"] .nav-badge');
@@ -347,19 +356,32 @@ class ClipperIQApp {
     if (!scheduledAt) { notify.warn('Set a schedule time'); return; }
     if (new Date(scheduledAt) <= new Date()) { notify.warn('Schedule time must be in the future'); return; }
 
-    const connected = await authStore.isConnected(platform.toLowerCase());
-    if (!connected) {
-      notify.warn(`${platform} is not connected — go to Accounts to connect`);
-      return;
-    }
-
     const clips = await db.getAll(STORES.CLIPS);
     const clip = clips.find(c => c.id === clipId);
     if (!clip) { notify.error('Clip not found'); return; }
 
     try {
-      await jobQueue.add({ clipId, blobId: clip.blobId, platform, caption, scheduledAt });
-      notify.success(`Scheduled on ${platform} for ${new Date(scheduledAt).toLocaleString()}`);
+      if (platform === 'All') {
+        const candidates = [
+          { name: 'TikTok', key: 'tiktok' },
+          { name: 'Instagram', key: 'instagram' },
+          { name: 'YouTube', key: 'youtube' },
+        ];
+        const targets = [];
+        for (const p of candidates) {
+          if (await authStore.isConnected(p.key)) targets.push(p.name);
+        }
+        if (targets.length === 0) { notify.warn('No connected platforms. Connect accounts in the Accounts tab.'); return; }
+        for (const name of targets) {
+          await jobQueue.add({ clipId, blobId: clip.blobId, platform: name, caption, scheduledAt });
+        }
+        notify.success(`Scheduled on ${targets.join(', ')} for ${new Date(scheduledAt).toLocaleString()}`);
+      } else {
+        const connected = await authStore.isConnected(platform.toLowerCase());
+        if (!connected) { notify.warn(`${platform} is not connected — go to Accounts to connect`); return; }
+        await jobQueue.add({ clipId, blobId: clip.blobId, platform, caption, scheduledAt });
+        notify.success(`Scheduled on ${platform} for ${new Date(scheduledAt).toLocaleString()}`);
+      }
       document.getElementById('schedClipSelect').value = '';
       document.getElementById('schedPlatformSelect').value = '';
       document.getElementById('schedCaption').value = '';
