@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { db as localDb } from "./storage/db.js";
 
@@ -21,6 +21,10 @@ export const SUPER_ADMIN_EMAIL = "barasagodwil@gmail.com";
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const firestore = getFirestore(app);
+
+// Prefer persistent sessions across reloads (helps on mobile/Safari)
+try { setPersistence(auth, browserLocalPersistence).catch(() => {}); } catch {}
+try { auth.useDeviceLanguage && auth.useDeviceLanguage(); } catch {}
 
 /**
  * Sync global API keys from Firestore to local IndexedDB
@@ -80,6 +84,13 @@ export function logoutUser() {
 export async function loginWithGoogle() {
   const provider = new GoogleAuthProvider();
   try {
+    const ua = navigator.userAgent || '';
+    const isMobile = /iPhone|iPad|iPod|Android|Mobile/i.test(ua) || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (window.navigator && window.navigator.standalone === true);
+    if (isMobile || isStandalone) {
+      await signInWithRedirect(auth, provider);
+      return null;
+    }
     return await signInWithPopup(auth, provider);
   } catch (error) {
     const code = error && error.code ? String(error.code) : '';
