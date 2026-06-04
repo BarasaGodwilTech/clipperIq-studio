@@ -91,13 +91,7 @@ export async function loginWithGoogle() {
   const provider = new GoogleAuthProvider();
   try { provider.setCustomParameters({ prompt: 'select_account' }); } catch {}
   try {
-    const ua = navigator.userAgent || '';
-    const isMobile = /iPhone|iPad|iPod|Android|Mobile/i.test(ua) || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-    const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (window.navigator && window.navigator.standalone === true);
-    if (isMobile || isStandalone) {
-      await signInWithRedirect(auth, provider);
-      return null;
-    }
+    // Always prefer popup to avoid opening a new tab or full-page redirect
     return await signInWithPopup(auth, provider);
   } catch (error) {
     const code = error && error.code ? String(error.code) : '';
