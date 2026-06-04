@@ -385,44 +385,51 @@ export const clipsUI = {
   },
 
   async generateThumbnail(clip) {
-    if (this.previewUrls[clip.blobId]) return;
     try {
-      const blob = await videoStore.getBlob(clip.blobId);
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      this.previewUrls[clip.blobId] = url;
-      const preview = document.getElementById(`clip-preview-${clip.id}`);
-      if (preview) {
-        const video = document.createElement('video');
-        video.preload = 'metadata';
-        video.src = url;
-        video.muted = true;
-        video.playsInline = true;
-        const draw = () => {
-          if (!document.getElementById(`clip-preview-${clip.id}`)) return;
-          const w = preview.clientWidth || 320;
-          const h = preview.clientHeight || 180;
-          const canvas = document.createElement('canvas');
-          canvas.width = w; canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          const vw = video.videoWidth || w; const vh = video.videoHeight || h;
-          const arV = vw / vh; const arC = w / h;
-          let sx = 0, sy = 0, sw = vw, sh = vh;
-          if (arV > arC) { const newW = sh * arC; sx = (sw - newW) / 2; sw = newW; }
-          else { const newH = sw / arC; sy = (sh - newH) / 2; sh = newH; }
-          ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h);
-          ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
-          canvas.style.cssText = 'width:100%;height:100%;position:absolute;top:0;left:0;';
-          preview.style.position = 'relative';
-          preview.insertBefore(canvas, preview.firstChild);
-          const ph = preview.querySelector('div[style*="font-size:28px"]'); if (ph) ph.remove();
-          video.src = '';
-          video.load();
-        };
-        video.addEventListener('loadeddata', () => { try { video.currentTime = 0.5; } catch { draw(); } }, { once: true });
-        video.addEventListener('seeked', draw, { once: true });
-        if (video.readyState >= 2) { draw(); }
+      // Reuse cached URL when available, but still draw if canvas is missing
+      let url = this.previewUrls[clip.blobId];
+      if (!url) {
+        const blob = await videoStore.getBlob(clip.blobId);
+        if (!blob) return;
+        url = URL.createObjectURL(blob);
+        this.previewUrls[clip.blobId] = url;
       }
+
+      const preview = document.getElementById(`clip-preview-${clip.id}`);
+      if (!preview) return;
+
+      // If a canvas already exists in the container, assume drawn
+      if (preview.querySelector('canvas')) return;
+
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.src = url;
+      video.muted = true;
+      video.playsInline = true;
+      const draw = () => {
+        if (!document.getElementById(`clip-preview-${clip.id}`)) return;
+        const w = preview.clientWidth || 320;
+        const h = preview.clientHeight || 180;
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        const vw = video.videoWidth || w; const vh = video.videoHeight || h;
+        const arV = vw / vh; const arC = w / h;
+        let sx = 0, sy = 0, sw = vw, sh = vh;
+        if (arV > arC) { const newW = sh * arC; sx = (sw - newW) / 2; sw = newW; }
+        else { const newH = sw / arC; sy = (sh - newH) / 2; sh = newH; }
+        ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h);
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+        canvas.style.cssText = 'width:100%;height:100%;position:absolute;top:0;left:0;';
+        preview.style.position = 'relative';
+        preview.insertBefore(canvas, preview.firstChild);
+        const ph = preview.querySelector('div[style*="font-size:28px"]'); if (ph) ph.remove();
+        video.src = '';
+        video.load();
+      };
+      video.addEventListener('loadeddata', () => { try { video.currentTime = 0.5; } catch { draw(); } }, { once: true });
+      video.addEventListener('seeked', draw, { once: true });
+      if (video.readyState >= 2) { draw(); }
     } catch {
     }
   },

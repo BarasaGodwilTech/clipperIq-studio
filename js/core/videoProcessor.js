@@ -338,6 +338,8 @@ export class VideoProcessor {
                 if (msg.includes('HTMLMediaElement already connected previously')) {
                   const captureFn = video.captureStream?.bind(video) || video.mozCaptureStream?.bind(video);
                   if (!captureFn) throw err;
+                  // Ensure the element has audible volume for captureStream path
+                  try { video.volume = 1.0; } catch {}
                   const videoRawStream = captureFn();
                   vSourceNode = audioCtx.createMediaStreamSource(videoRawStream);
                 } else {
