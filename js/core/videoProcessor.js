@@ -197,6 +197,7 @@ export class VideoProcessor {
       let bgmObjUrl = null;
       let bgWorker = null;
       let timeoutId = null;
+      let started = false;
 
       const cleanup = () => {
         try { if (animFrame) cancelAnimationFrame(animFrame); } catch {}
@@ -244,6 +245,8 @@ export class VideoProcessor {
       video.addEventListener('canplay', () => { video.currentTime = startSec; }, { once: true });
 
       const startRecording = async () => {
+        if (started) return;
+        started = true;
         try {
           // Compute output dimensions
           const [aw, ah] = aspectRatio === 'original'
@@ -532,6 +535,7 @@ export class VideoProcessor {
       let visHandler = null;
       let audioCtx = null;
       let bgWorker = null;
+      let started = false;
 
       const finish = (resultOrError) => {
         if (settled) return;
@@ -565,6 +569,8 @@ export class VideoProcessor {
       video.addEventListener('canplay', () => { video.currentTime = startSec; }, { once: true });
 
       const startRecording = async () => {
+        if (started) return;
+        started = true;
         try {
           // ── Compute output dimensions ──────────────────────────────────
           const [aw, ah] = aspectRatio === 'original'
