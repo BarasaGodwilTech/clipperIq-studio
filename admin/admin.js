@@ -90,7 +90,12 @@ onAuthStateChanged(auth, async (user) => {
 (async () => {
   try {
     const result = await fetchRedirectResult();
+    // If a redirect sign-in just completed, result.user will be set
     if (result && result.user) {
+      // Force UI to the admin view quickly; onAuthStateChanged will also run
+      document.getElementById('view-login').style.display = 'none';
+      document.getElementById('view-admin').style.display = 'block';
+      document.body.classList.remove('logged-out');
     }
   } catch (err) {
     const code = err && err.code ? String(err.code) : '';

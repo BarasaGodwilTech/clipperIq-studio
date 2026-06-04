@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, setPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { db as localDb } from "./storage/db.js";
 
@@ -22,8 +22,14 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const firestore = getFirestore(app);
 
-// Prefer persistent sessions across reloads (helps on mobile/Safari)
-try { setPersistence(auth, browserLocalPersistence).catch(() => {}); } catch {}
+// Prefer persistent sessions across reloads. Try IndexedDB first, then Local, Session, In-Memory.
+try {
+  setPersistence(auth, indexedDBLocalPersistence)
+    .catch(() => setPersistence(auth, browserLocalPersistence))
+    .catch(() => setPersistence(auth, browserSessionPersistence))
+    .catch(() => setPersistence(auth, inMemoryPersistence))
+    .catch(() => {});
+} catch {}
 try { auth.useDeviceLanguage && auth.useDeviceLanguage(); } catch {}
 
 /**
@@ -83,6 +89,7 @@ export function logoutUser() {
 
 export async function loginWithGoogle() {
   const provider = new GoogleAuthProvider();
+  try { provider.setCustomParameters({ prompt: 'select_account' }); } catch {}
   try {
     const ua = navigator.userAgent || '';
     const isMobile = /iPhone|iPad|iPod|Android|Mobile/i.test(ua) || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
