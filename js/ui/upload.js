@@ -134,6 +134,10 @@ export const uploadUI = {
         bgm = { type: 'url', url: bgmUrl, volume: bgmVolume, loop: true };
       }
 
+      if (!bgm && bgmVolume > 0.0001) {
+        try { notify.warn('Background music volume is set, but no audio source is selected. Select a BGM file to enable mixing.'); } catch {}
+      }
+
       await clipGenerator.processUpload(
         upload.id,
         (progress) => {
