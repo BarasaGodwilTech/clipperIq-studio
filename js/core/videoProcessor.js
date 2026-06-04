@@ -243,6 +243,7 @@ export class VideoProcessor {
 
       video.onerror = () => finish(new Error(`Video element error: ${video.error?.message}`));
       video.addEventListener('canplay', () => { video.currentTime = startSec; }, { once: true });
+      video.addEventListener('loadedmetadata', () => { if (startSec === 0 && !settled) startRecording(); }, { once: true });
 
       const startRecording = async () => {
         if (started) return;
@@ -464,6 +465,8 @@ export class VideoProcessor {
             const canvasStream = canvas.captureStream(30);
             const captureFn = video.captureStream?.bind(video) || video.mozCaptureStream?.bind(video);
             if (!captureFn) { finish(new Error('captureStream API not available in this browser')); return; }
+            // Ensure element audio is audible for captureStream fallback
+            try { video.volume = 1.0; } catch {}
             const videoRawStream = captureFn();
             const combined = new MediaStream([...canvasStream.getVideoTracks(), ...videoRawStream.getAudioTracks()]);
 
@@ -486,6 +489,7 @@ export class VideoProcessor {
           recorder.ondataavailable = (e) => { if (e.data?.size > 0) chunks.push(e.data); };
           recorder.onstop = () => finish(new Blob(chunks, { type: recorder.mimeType || 'video/webm' }));
           recorder.onerror = (e) => finish(new Error(`MediaRecorder error: ${e.error?.message}`));
+          try { recorder.start(200); } catch (e) { finish(new Error(`MediaRecorder start failed: ${e?.message || e}`)); return; }
 
           if (audioCtx?.state === 'suspended') { try { await audioCtx.resume(); } catch {} }
           // Keep running across tab visibility changes
@@ -511,6 +515,13 @@ export class VideoProcessor {
       if (startSec === 0) {
         video.addEventListener('loadeddata', () => { if (!settled) startRecording(); }, { once: true });
       }
+      // If element is ready already, kick off immediately
+      try {
+        if (video.readyState >= 2) {
+          if (startSec === 0) startRecording();
+          else { try { video.currentTime = startSec; } catch { startRecording(); } }
+        }
+      } catch {}
     });
   }
 
@@ -699,6 +710,7 @@ export class VideoProcessor {
             const canvasStream = canvas.captureStream(30);
             const captureFn = video.captureStream?.bind(video) || video.mozCaptureStream?.bind(video);
             if (!captureFn) { finish(new Error('captureStream API not available in this browser')); return; }
+            try { video.volume = 1.0; } catch {}
             const videoRawStream = captureFn();
             combined = new MediaStream([
               ...canvasStream.getVideoTracks(),
@@ -760,6 +772,13 @@ export class VideoProcessor {
       if (startSec === 0) {
         video.addEventListener('loadeddata', () => { if (!settled) startRecording(); }, { once: true });
       }
+      // If element is already ready, kick off immediately
+      try {
+        if (video.readyState >= 2) {
+          if (startSec === 0) startRecording();
+          else { try { video.currentTime = startSec; } catch { startRecording(); } }
+        }
+      } catch {}
     });
   }
 

@@ -137,7 +137,7 @@ export class ClipGenerator {
         duration: c.duration,
         overlayOptions: { ...overlayOptions, partNumber: overlayOptions.partNumber + idx },
         aspectRatio,
-        audioOptions: bgm ? { bgm, originalVolume, restartAtClipStart: true } : null,
+        audioOptions: bgm ? { bgm, originalVolume, restartAtClipStart: true, bindSliders: false } : null,
       }));
 
       await videoProcessor.extractClipsBatch(
