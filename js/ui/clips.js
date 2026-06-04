@@ -3,6 +3,7 @@ import { videoStore } from '../storage/videoStore.js';
 import { videoProcessor } from '../core/videoProcessor.js';
 import { jobQueue } from '../scheduler/jobQueue.js';
 import { notify } from './notifications.js';
+import { authStore } from '../storage/authStore.js';
 
 function formatTime(sec) {
   const m = Math.floor(sec / 60).toString().padStart(2, '0');
@@ -13,6 +14,7 @@ function formatTime(sec) {
 export const clipsUI = {
   clips: [],
   previewUrls: {},
+  _seriesPlan: null,
 
   async refresh() {
     try {
@@ -23,6 +25,186 @@ export const clipsUI = {
       this.clips = [];
     }
     this.renderGrid();
+  },
+
+  openSeriesScheduler() {
+    const groups = {};
+    for (const c of this.clips) {
+      if (c.partNumber == null) continue;
+      if (!groups[c.uploadId]) groups[c.uploadId] = [];
+      groups[c.uploadId].push(c);
+    }
+    const uploadIds = Object.keys(groups).filter(id => groups[id].length >= 2);
+    if (uploadIds.length === 0) { notify.warn('No multi-part series found'); return; }
+
+    const pickId = uploadIds.sort((a, b) => groups[b].length - groups[a].length)[0];
+    const parts = groups[pickId].sort((a, b) => (a.partNumber || 0) - (b.partNumber || 0));
+
+    let host = document.getElementById('seriesScheduleModal');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'overlay-modal';
+      host.id = 'seriesScheduleModal';
+      host.innerHTML = `
+        <div class="modal-box" style="max-width:820px">
+          <div class="modal-header">
+            <span class="modal-title">Schedule Series</span>
+            <button class="modal-close" onclick="document.getElementById('seriesScheduleModal').classList.remove('show')">✕</button>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label class="form-label">Upload</label>
+              <select class="form-input" id="seriesUploadSelect"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Platforms</label>
+              <select class="form-input" id="seriesPlatform">
+                <option value="All">All connected</option>
+                <option value="TikTok">TikTok</option>
+                <option value="Instagram">Instagram</option>
+                <option value="YouTube">YouTube</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Base Title</label>
+              <input class="form-input" id="seriesBaseTitle" placeholder="My Video Title">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Start Date/Time</label>
+              <input type="datetime-local" class="form-input" id="seriesStartTime">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max Posts per Day</label>
+              <input type="number" class="form-input" id="seriesMaxPerDay" min="1" max="6" value="2">
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:8px">
+              <input type="checkbox" id="seriesBestTimes" checked>
+              <label class="form-label" for="seriesBestTimes" style="margin:0">Use best-time windows</label>
+            </div>
+          </div>
+          <div id="seriesPlanTable" style="max-height:300px;overflow:auto;margin-top:8px;border:1px solid var(--bg3);border-radius:var(--radius)"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+            <button class="btn btn-ghost" onclick="document.getElementById('seriesScheduleModal').classList.remove('show')">Close</button>
+            <button class="btn btn-ghost" onclick="window.clipsUI.generateSeriesPlan()">Generate</button>
+            <button class="btn btn-primary" onclick="window.clipsUI.confirmSeriesSchedule()">Confirm</button>
+          </div>
+        </div>`;
+      document.body.appendChild(host);
+    }
+
+    const upSel = document.getElementById('seriesUploadSelect');
+    upSel.innerHTML = uploadIds.map(id => {
+      const any = groups[id][0];
+      return `<option value="${id}">Upload ${id} · ${groups[id].length} parts</option>`;
+    }).join('');
+    upSel.value = pickId;
+
+    const st = new Date(Date.now() + 60 * 60 * 1000);
+    const local = new Date(st.getTime() - st.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    document.getElementById('seriesStartTime').value = local;
+
+    db.get(STORES.UPLOADS, parseInt(pickId, 10)).then(upload => {
+      const name = upload?.name || 'Video';
+      const base = String(name).replace(/\.[^.]+$/, '');
+      document.getElementById('seriesBaseTitle').value = base;
+    }).catch(() => { document.getElementById('seriesBaseTitle').value = 'Video'; });
+
+    this._seriesPlan = { uploadId: pickId, parts };
+    document.getElementById('seriesScheduleModal').classList.add('show');
+    this.generateSeriesPlan();
+  },
+
+  _getBestWindows(platform) {
+    const p = (platform || 'All').toLowerCase();
+    if (p === 'tiktok') return [11, 15, 19];
+    if (p === 'instagram') return [12, 18];
+    if (p === 'youtube') return [12, 16];
+    return [11, 15, 19];
+  },
+
+  generateSeriesPlan() {
+    const plat = document.getElementById('seriesPlatform')?.value || 'All';
+    const upSel = document.getElementById('seriesUploadSelect');
+    const uploadId = upSel?.value || this._seriesPlan?.uploadId;
+    const maxPerDay = Math.max(1, parseInt(document.getElementById('seriesMaxPerDay')?.value || '2', 10));
+    const useBest = !!document.getElementById('seriesBestTimes')?.checked;
+    const startStr = document.getElementById('seriesStartTime')?.value;
+    if (!startStr) { notify.warn('Choose a start time'); return; }
+    const start = new Date(startStr);
+    if (isNaN(start.getTime())) { notify.warn('Invalid start time'); return; }
+
+    const parts = this.clips
+      .filter(c => String(c.uploadId) === String(uploadId) && c.partNumber != null)
+      .sort((a, b) => (a.partNumber || 0) - (b.partNumber || 0));
+    if (parts.length === 0) { notify.warn('No parts found for this upload'); return; }
+
+    const windows = useBest ? this._getBestWindows(plat) : [start.getHours()];
+    const plan = [];
+    let cursor = new Date(start);
+    let i = 0;
+    while (i < parts.length) {
+      let postsToday = 0;
+      for (const hour of windows) {
+        if (i >= parts.length) break;
+        if (postsToday >= maxPerDay) break;
+        const dt = new Date(cursor);
+        dt.setHours(hour, start.getMinutes(), 0, 0);
+        if (dt < start) continue;
+        plan.push({ clip: parts[i], when: dt });
+        i++; postsToday++;
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    this._seriesPlan = { uploadId, platform: plat, items: plan };
+
+    const rows = plan.map((p, idx) => {
+      const local = new Date(p.when.getTime() - p.when.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      return `<div style="display:grid;grid-template-columns:90px 1fr 220px;gap:8px;align-items:center;padding:6px 8px;border-top:1px solid var(--bg3)">
+        <div style="font-weight:600">Part ${p.clip.partNumber}</div>
+        <div style="color:var(--muted);font-size:12px">${p.clip.title || ''}</div>
+        <input type="datetime-local" class="form-input" id="seriesWhen-${idx}" value="${local}">
+      </div>`;
+    }).join('');
+    const head = `<div style="display:grid;grid-template-columns:90px 1fr 220px;gap:8px;padding:6px 8px;background:var(--bg3);font-size:12px;color:var(--muted)">
+      <div>Part</div><div>Title</div><div>When</div></div>`;
+    document.getElementById('seriesPlanTable').innerHTML = head + rows;
+  },
+
+  async confirmSeriesSchedule() {
+    const plan = this._seriesPlan;
+    if (!plan || !plan.items || plan.items.length === 0) { notify.warn('No plan to schedule'); return; }
+    const base = (document.getElementById('seriesBaseTitle')?.value || 'Video').trim();
+    const plat = document.getElementById('seriesPlatform')?.value || 'All';
+
+    const platforms = async () => {
+      if (plat !== 'All') return [plat];
+      const out = [];
+      if (await authStore.isConnected('tiktok')) out.push('TikTok');
+      if (await authStore.isConnected('instagram')) out.push('Instagram');
+      if (await authStore.isConnected('youtube')) out.push('YouTube');
+      return out;
+    };
+
+    const targets = await platforms();
+    if (targets.length === 0) { notify.warn('No connected platforms. Connect accounts first.'); return; }
+
+    try {
+      for (let i = 0; i < plan.items.length; i++) {
+        const p = plan.items[i];
+        const val = document.getElementById(`seriesWhen-${i}`)?.value;
+        const when = val ? new Date(val) : p.when;
+        for (const name of targets) {
+          const caption = `${base} — Part ${p.clip.partNumber}`;
+          await jobQueue.add({ clipId: p.clip.id, blobId: p.clip.blobId, platform: name, caption, scheduledAt: when.toISOString(), options: {} });
+        }
+      }
+      notify.success(`Scheduled ${plan.items.length} part(s) on ${targets.join(', ')}`);
+      document.getElementById('seriesScheduleModal')?.classList.remove('show');
+      try { window.queueUI?.refresh?.(); } catch {}
+    } catch (err) {
+      notify.error(`Failed to schedule series: ${err.message}`);
+    }
   },
 
   async renderGrid() {
