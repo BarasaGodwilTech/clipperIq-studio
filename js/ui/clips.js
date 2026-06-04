@@ -39,7 +39,18 @@ export const clipsUI = {
       return;
     }
 
-    const sorted = [...this.clips].sort((a, b) => b.score - a.score);
+    const byPart = [...this.clips].sort((a, b) => {
+      const ap = (a.partNumber != null) ? a.partNumber : Infinity;
+      const bp = (b.partNumber != null) ? b.partNumber : Infinity;
+      if (a.uploadId === b.uploadId && ap !== bp) return ap - bp;
+      if (ap !== bp) return ap - bp;
+      const at = new Date(a.createdAt || 0).getTime();
+      const bt = new Date(b.createdAt || 0).getTime();
+      if (at !== bt) return at - bt;
+      return b.score - a.score;
+    });
+    const hasParts = byPart.some(c => c.partNumber != null);
+    const sorted = hasParts ? byPart : [...this.clips].sort((a, b) => b.score - a.score);
     grid.innerHTML = sorted.map(clip => this.renderClipCard(clip)).join('');
 
     for (const clip of sorted) {
@@ -49,6 +60,20 @@ export const clipsUI = {
 
   renderClipCard(clip) {
     const scoreColor = clip.score > 80 ? 'var(--success)' : clip.score > 60 ? 'var(--warn)' : 'var(--muted)';
+    let displayPart = clip.partNumber;
+    try {
+      const isSeries = Array.isArray(clip.sources) && clip.sources.includes('series');
+      if (isSeries && (clip.duration || 0) > 0) {
+        const peers = this.clips.filter(c => c.uploadId === clip.uploadId && (c.partNumber != null));
+        const base = peers.length ? Math.min(...peers.map(p => p.partNumber)) : (clip.partNumber != null ? clip.partNumber : 1);
+        const estIdx = clip.startTime === 0 ? 0 : Math.round((clip.startTime + 3) / (clip.duration || 1));
+        const derived = base + estIdx;
+        if (Number.isFinite(derived)) displayPart = derived;
+      }
+    } catch {}
+    const titleText = (displayPart != null)
+      ? `Part ${displayPart} (${formatTime(clip.startTime)} \u2013 ${formatTime(clip.startTime + clip.duration)})`
+      : (clip.title || `Clip (${formatTime(clip.startTime)})`);
     return `
       <div class="clip-card" id="clip-card-${clip.id}">
         <div class="clip-preview" id="clip-preview-${clip.id}">
@@ -58,7 +83,7 @@ export const clipsUI = {
           </div>
         </div>
         <div class="clip-meta">
-          <div class="clip-title">${clip.title || `Clip (${formatTime(clip.startTime)})`}</div>
+          <div class="clip-title">${titleText}</div>
           <div class="clip-score">
             <span style="font-size:11px;color:var(--muted)">Score</span>
             <div class="score-bar"><div class="score-fill" style="width:${clip.score}%"></div></div>

@@ -120,7 +120,10 @@ export class ClipGenerator {
           if (onProgress) onProgress({ phase: 'extracting', clipIndex: i, total, pct });
         };
         const clipBlob = await videoProcessor.extractClipWithReencode(videoBlob, c.start, c.duration);
-        await this._saveClip(uploadId, clipBlob, c, i, results, overlayOptions, null, aspectRatio);
+        const perClipOverlay = (overlayOptions && overlayOptions.partNumber != null)
+          ? { ...overlayOptions, partNumber: overlayOptions.partNumber + i }
+          : { ...overlayOptions };
+        await this._saveClip(uploadId, clipBlob, c, i, results, perClipOverlay, null, aspectRatio);
         if (onProgress) onProgress({ phase: 'extracting', clipIndex: i, total, pct: 100 });
       }
       videoProcessor.onProgress = null;
@@ -180,9 +183,9 @@ export class ClipGenerator {
         status: 'ready',
         createdAt: new Date().toISOString(),
         title: (overlayOptions.format !== 'none' && overlayOptions.partNumber != null)
-          ? `Part ${overlayOptions.partNumber + i} (${formatTime(c.start)} \u2013 ${formatTime(c.start + c.duration)})`
+          ? `Part ${overlayOptions.partNumber} (${formatTime(c.start)} \u2013 ${formatTime(c.start + c.duration)})`
           : `Clip ${i + 1} (${formatTime(c.start)} \u2013 ${formatTime(c.start + c.duration)})`,
-        partNumber: (overlayOptions.partNumber != null) ? overlayOptions.partNumber + i : null,
+        partNumber: (overlayOptions.partNumber != null) ? overlayOptions.partNumber : null,
         overlayFormat: overlayOptions.format || 'none',
         overlayStartSec: typeof overlayOptions.overlayStartSec === 'number' ? overlayOptions.overlayStartSec : 0,
         aspectRatio,

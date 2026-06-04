@@ -400,10 +400,18 @@ class ClipperIQApp {
     const select = document.getElementById('schedClipSelect');
     if (!select) return;
     const clips = await db.getAll(STORES.CLIPS);
+    const byPart = [...clips].sort((a, b) => {
+      const ap = (a.partNumber != null) ? a.partNumber : Infinity;
+      const bp = (b.partNumber != null) ? b.partNumber : Infinity;
+      if (a.uploadId === b.uploadId && ap !== bp) return ap - bp;
+      if (ap !== bp) return ap - bp;
+      return b.score - a.score;
+    });
+    const hasParts = byPart.some(c => c.partNumber != null);
+    const ordered = hasParts ? byPart : [...clips].sort((a, b) => b.score - a.score);
     select.innerHTML = '<option value="">— Choose a clip —</option>' +
-      clips.sort((a, b) => b.score - a.score)
-           .map(c => `<option value="${c.id}">${c.title || 'Clip #' + c.id} (score: ${c.score})</option>`)
-           .join('');
+      ordered.map(c => `<option value="${c.id}">${c.title || 'Clip #' + c.id} (score: ${c.score})</option>`)
+             .join('');
 
     const now = new Date(Date.now() + 3600000);
     const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
