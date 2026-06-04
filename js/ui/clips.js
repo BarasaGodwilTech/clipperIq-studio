@@ -176,8 +176,14 @@ export const clipsUI = {
       const restartRow = document.getElementById('mixRestartRow');
       const ovol = document.getElementById('mixOrigVol');
       const bvol = document.getElementById('mixBgmVol');
-      if (ovol) ovol.value = String(Math.round((clip.originalVolume != null ? clip.originalVolume : 1) * 100));
-      if (bvol) bvol.value = String(Math.round((clip.bgmVolume != null ? clip.bgmVolume : 0.25) * 100));
+      if (ovol) {
+        ovol.value = String(Math.round((clip.originalVolume != null ? clip.originalVolume : 1) * 100));
+        try { ovol.dispatchEvent(new Event('input')); } catch {}
+      }
+      if (bvol) {
+        bvol.value = String(Math.round((clip.bgmVolume != null ? clip.bgmVolume : 0.25) * 100));
+        try { bvol.dispatchEvent(new Event('input')); } catch {}
+      }
       if (en) en.checked = !!clip.bgmEnabled;
       const urlEl = document.getElementById('mixBgmUrl');
       if (urlEl && clip.bgmSource && clip.bgmSource.type === 'url' && clip.bgmSource.url) urlEl.value = clip.bgmSource.url;
