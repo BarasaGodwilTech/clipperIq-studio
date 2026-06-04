@@ -1,4 +1,4 @@
-import { auth, firestore, onAuthStateChanged, loginUser, logoutUser, loginWithGoogle, saveApiKeysToFirebase } from '../js/firebase.js';
+import { auth, firestore, onAuthStateChanged, loginUser, logoutUser, loginWithGoogle, saveApiKeysToFirebase, fetchRedirectResult } from '../js/firebase.js';
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 const authBtn = document.getElementById('authBtn');
@@ -21,11 +21,17 @@ authBtn.addEventListener('click', async () => {
 
 authGoogleBtn.addEventListener('click', async () => {
   authError.style.display = 'none';
+  authGoogleBtn.disabled = true;
+  const prevText = authGoogleBtn.textContent;
+  authGoogleBtn.textContent = 'Opening Google…';
   try {
     await loginWithGoogle();
   } catch (err) {
     authError.textContent = err.message;
     authError.style.display = 'block';
+  } finally {
+    authGoogleBtn.disabled = false;
+    authGoogleBtn.textContent = prevText;
   }
 });
 
@@ -80,3 +86,17 @@ onAuthStateChanged(auth, async (user) => {
     document.body.classList.add('logged-out');
   }
 });
+
+(async () => {
+  try {
+    const result = await fetchRedirectResult();
+    if (result && result.user) {
+    }
+  } catch (err) {
+    const code = err && err.code ? String(err.code) : '';
+    if (code !== 'auth/no-auth-event') {
+      authError.textContent = err.message || 'Google sign-in failed.';
+      authError.style.display = 'block';
+    }
+  }
+})();
