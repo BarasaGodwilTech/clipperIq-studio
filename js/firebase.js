@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, setPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, setPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { db as localDb } from "./storage/db.js";
 
@@ -13,9 +13,6 @@ const firebaseConfig = {
   appId: "1:970532047088:web:81f33d1d10779ec5da1a35"
 };
 
-
-// The email address that has Super Admin privileges (can save API keys)
-export const SUPER_ADMIN_EMAIL = "barasagodwil@gmail.com";
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -61,10 +58,6 @@ export async function syncApiKeysFromFirebase() {
  */
 export async function saveApiKeysToFirebase(keysObject) {
   try {
-    const user = auth.currentUser;
-    if (!user || user.email !== SUPER_ADMIN_EMAIL) {
-      throw new Error("Unauthorized: Only Super Admin can save API keys.");
-    }
     const keysRef = doc(firestore, "settings", "global_api_keys");
     await setDoc(keysRef, keysObject, { merge: true });
     console.log("[Firebase] API keys saved to Firestore successfully.");
@@ -95,16 +88,17 @@ export async function loginWithGoogle() {
     return await signInWithPopup(auth, provider);
   } catch (error) {
     const code = error && error.code ? String(error.code) : '';
-    if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
-      await signInWithRedirect(auth, provider);
-      return null;
+    if (code === 'auth/popup-blocked') {
+      throw new Error('Popup was blocked by your browser. Please allow popups for this site and try again.');
+    }
+    if (code === 'auth/popup-closed-by-user') {
+      throw new Error('Popup closed before completing sign-in. Please try again.');
+    }
+    if (code === 'auth/operation-not-supported-in-this-environment') {
+      throw new Error('Sign-in popup is not supported in this environment. Please try a different browser.');
     }
     throw error;
   }
-}
-
-export function fetchRedirectResult() {
-  return getRedirectResult(auth);
 }
 
 export { onAuthStateChanged };
