@@ -77,6 +77,7 @@ class ClipperIQApp {
     await db.open();
     this.compatOk = this.checkCompatibility();
     this.setupNavigation();
+    this.setupSidebarToggle();
     this.setupScheduleModal();
     this.setupSettingsTabs();
     this.setupPreviewModal();
@@ -179,6 +180,7 @@ class ClipperIQApp {
     const title = document.getElementById('pageTitle');
     if (title) title.textContent = PAGE_TITLES[view] || view;
     this.currentView = view;
+    this.closeSidebar?.();
 
     if (view === 'dashboard') dashboard.refresh();
     else if (view === 'clips') { clipsUI.refresh(); }
@@ -191,6 +193,55 @@ class ClipperIQApp {
   setupNavigation() {
     document.querySelectorAll('.nav-item[data-view]').forEach(btn => {
       btn.addEventListener('click', () => this.navigate(btn.dataset.view, btn));
+    });
+  }
+
+  setupSidebarToggle() {
+    const toggle = document.getElementById('sidebarToggle');
+    const backdrop = document.getElementById('sidebarBackdrop');
+
+    if (!toggle || !backdrop) return;
+
+    const closeSidebar = () => {
+      document.body.classList.remove('sidebar-open');
+    };
+
+    const updateAria = () => {
+      const expanded = document.body.classList.contains('sidebar-open');
+      toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    };
+
+    updateAria();
+
+    this.closeSidebar = () => {
+      closeSidebar();
+      updateAria();
+    };
+
+    toggle.addEventListener('click', () => {
+      document.body.classList.toggle('sidebar-open');
+      updateAria();
+    });
+
+    backdrop.addEventListener('click', () => {
+      closeSidebar();
+      updateAria();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        const wasOpen = document.body.classList.contains('sidebar-open');
+        closeSidebar();
+        if (wasOpen) updateAria();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 900) {
+        const wasOpen = document.body.classList.contains('sidebar-open');
+        closeSidebar();
+        if (wasOpen) updateAria();
+      }
     });
   }
 

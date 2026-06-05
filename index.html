@@ -43,7 +43,7 @@ if ('serviceWorker' in navigator) {
 </head>
 <body class="">
 
-<aside class="sidebar">
+<aside class="sidebar" id="appSidebar">
   <div class="logo">
     <div class="logo-mark">ClipperIQ</div>
     <div class="logo-sub">Creator Automation Studio</div>
@@ -99,8 +99,15 @@ if ('serviceWorker' in navigator) {
   </div>
 </aside>
 
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
 <div class="main" id="mainContent">
   <header class="topbar">
+    <button class="menu-toggle" id="sidebarToggle" aria-label="Toggle navigation" aria-controls="appSidebar">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
     <div class="page-title" id="pageTitle">Dashboard</div>
     <div class="topbar-actions">
       <button class="btn btn-ghost" title="Notifications">
@@ -108,7 +115,7 @@ if ('serviceWorker' in navigator) {
       </button>
       <button class="btn btn-primary" data-view="upload" id="newUploadBtn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        New Upload
+        <span class="btn-label">New Upload</span>
       </button>
     </div>
   </header>
@@ -475,21 +482,23 @@ if ('serviceWorker' in navigator) {
         <button class="btn btn-ghost btn-sm" onclick="window.queueUI?.refresh()">↻ Refresh</button>
       </div>
       <div class="card">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Clip</th>
-              <th>Platform</th>
-              <th>Scheduled</th>
-              <th>Retries</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="queueTable">
-            <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted)">Loading queue...</td></tr>
-          </tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Clip</th>
+                <th>Platform</th>
+                <th>Scheduled</th>
+                <th>Retries</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="queueTable">
+              <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted)">Loading queue...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 

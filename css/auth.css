@@ -61,3 +61,13 @@
 .auth-toggle a:hover {
   text-decoration: underline;
 }
+
+@media (max-width: 600px) {
+  .auth-container {
+    padding: 24px 16px;
+  }
+  .auth-box {
+    padding: 28px 22px;
+    border-radius: var(--radius);
+  }
+}
