@@ -389,8 +389,18 @@ class ClipperIQApp {
       else if (platform === 'Instagram') await instagramAPI.connect();
       else if (platform === 'YouTube') await youtubeAPI.connect();
       notify.success(`${platform} connected!`);
-      await this.refreshAccountStatuses();
-      this._updateDashPlatformStatus();
+      
+      // Update all UI status indicators with error handling
+      try {
+        await this.refreshAccountStatuses();
+      } catch (e) {
+        console.warn('[Auth] Failed to refresh account statuses:', e);
+      }
+      try {
+        await this._updateDashPlatformStatus();
+      } catch (e) {
+        console.warn('[Auth] Failed to update dashboard status:', e);
+      }
     } catch (err) {
       notify.error(`${platform} connection failed: ${err.message}`);
       console.error(`[Auth] ${platform} connect error:`, err);
@@ -578,12 +588,29 @@ class ClipperIQApp {
 
   async disconnectPlatform(platform) {
     if (!confirm(`Disconnect ${platform}? Scheduled posts will not be sent.`)) return;
-    if (platform === 'TikTok') await tiktokAPI.disconnect();
-    else if (platform === 'Instagram') await instagramAPI.disconnect();
-    else if (platform === 'YouTube') await youtubeAPI.disconnect();
-    notify.info(`${platform} disconnected`);
-    await this.refreshAccountStatuses();
-    this._updateDashPlatformStatus();
+    
+    try {
+      if (platform === 'TikTok') await tiktokAPI.disconnect();
+      else if (platform === 'Instagram') await instagramAPI.disconnect();
+      else if (platform === 'YouTube') await youtubeAPI.disconnect();
+      
+      notify.info(`${platform} disconnected`);
+      
+      // Update all UI status indicators with error handling
+      try {
+        await this.refreshAccountStatuses();
+      } catch (e) {
+        console.warn('[Auth] Failed to refresh account statuses after disconnect:', e);
+      }
+      try {
+        await this._updateDashPlatformStatus();
+      } catch (e) {
+        console.warn('[Auth] Failed to update dashboard status after disconnect:', e);
+      }
+    } catch (err) {
+      notify.error(`Failed to disconnect ${platform}: ${err.message}`);
+      console.error(`[Auth] ${platform} disconnect error:`, err);
+    }
   }
 
   async _updateDashPlatformStatus() {
@@ -592,12 +619,24 @@ class ClipperIQApp {
       ['instagram', 'ig-status-dash'],
       ['youtube', 'yt-status-dash'],
     ];
+    
     for (const [key, elId] of pairs) {
-      const el = document.getElementById(elId);
-      if (!el) continue;
-      const connected = await authStore.isConnected(key);
-      el.className = connected ? 'conn-status conn-ok' : 'conn-status conn-no';
-      el.textContent = connected ? 'Connected' : 'Not connected';
+      try {
+        const el = document.getElementById(elId);
+        if (!el) continue;
+        
+        const connected = await authStore.isConnected(key);
+        
+        // Defensive: ensure element has classList and textContent
+        if (el.classList) {
+          el.className = connected ? 'conn-status conn-ok' : 'conn-status conn-no';
+        }
+        if (el.textContent !== undefined) {
+          el.textContent = connected ? 'Connected' : 'Not connected';
+        }
+      } catch (e) {
+        console.warn(`[Auth] Failed to update status for ${key}:`, e);
+      }
     }
   }
 }
