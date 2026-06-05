@@ -37,6 +37,11 @@ export const videoStore = {
   async saveUpload(file) {
     const id = this.generateId('upload');
     await this.saveBlob(id, file, { name: file.name, originalName: file.name });
+    const base = String(file.name || '').replace(/\.[^.]+$/, '');
+    const words = base.replace(/[_\-.]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+    const title = words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    const seriesKey = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
     const uploadRecord = {
       blobId: id,
       name: file.name,
@@ -44,6 +49,8 @@ export const videoStore = {
       type: file.type,
       createdAt: new Date().toISOString(),
       status: 'uploaded',
+      title,
+      seriesKey,
     };
     const uploadId = await db.put(STORES.UPLOADS, uploadRecord);
     return { id: uploadId, blobId: id, ...uploadRecord };
@@ -61,5 +68,13 @@ export const videoStore = {
     const upload = await db.get(STORES.UPLOADS, uploadId);
     if (!upload) throw new Error(`Upload ${uploadId} not found`);
     return db.put(STORES.UPLOADS, { ...upload, status, ...extra, updatedAt: new Date().toISOString() });
+  },
+
+  async updateUploadMeta(uploadId, patch = {}) {
+    const upload = await db.get(STORES.UPLOADS, uploadId);
+    if (!upload) throw new Error(`Upload ${uploadId} not found`);
+    const next = { ...upload, ...patch, updatedAt: new Date().toISOString() };
+    await db.put(STORES.UPLOADS, next);
+    return next;
   },
 };

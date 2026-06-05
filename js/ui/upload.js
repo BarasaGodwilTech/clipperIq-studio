@@ -1,6 +1,7 @@
 import { videoStore } from '../storage/videoStore.js';
 import { clipGenerator } from '../core/clipGenerator.js';
 import { notify } from './notifications.js';
+import { db, STORES } from '../storage/db.js';
 
 function formatBytes(b) {
   if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
@@ -12,6 +13,8 @@ export const uploadUI = {
   currentFile: null,
   currentUploadId: null,
   isProcessing: false,
+  _seriesIndex: null,
+  _titleDebounce: null,
 
   init() {
     const zone = document.getElementById('uploadZone');
@@ -34,6 +37,20 @@ export const uploadUI = {
 
     const processBtn = document.getElementById('processBtn');
     if (processBtn) processBtn.addEventListener('click', () => this.startProcessing());
+
+    const titleEl = document.getElementById('uploadVideoTitle');
+    if (titleEl) titleEl.addEventListener('input', () => {
+      if (this._titleDebounce) clearTimeout(this._titleDebounce);
+      this._titleDebounce = setTimeout(() => this._recalcNextPartFromTitle(), 200);
+    });
+
+    const contSel = document.getElementById('continueSeriesSelect');
+    if (contSel) contSel.addEventListener('change', () => this._applyContinuationSelection());
+
+    const seriesCb = document.getElementById('seriesMode');
+    if (seriesCb) seriesCb.addEventListener('change', () => this._recalcNextPartFromTitle());
+
+    this._buildSeriesIndex().catch(()=>{});
   },
 
   // Allow processing to continue while modal is hidden
@@ -85,6 +102,15 @@ export const uploadUI = {
       processBtn.disabled = false;
       processBtn.style.opacity = '1';
     }
+
+    try {
+      const base = String(file.name || '').replace(/\.[^.]+$/, '');
+      const words = base.replace(/[_\-.]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+      const title = words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      const titleEl = document.getElementById('uploadVideoTitle');
+      if (titleEl) titleEl.value = title;
+      this._recalcNextPartFromTitle();
+    } catch {}
   },
 
   async startProcessing() {
@@ -106,6 +132,17 @@ export const uploadUI = {
       this.setModalStep('Saving video to storage...', 2);
       const upload = await videoStore.saveUpload(this.currentFile);
       this.currentUploadId = upload.id;
+
+      try {
+        const titleEl = document.getElementById('uploadVideoTitle');
+        const userTitle = (titleEl?.value || '').trim();
+        if (userTitle) {
+          const seriesKey = userTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+          if (upload.title !== userTitle || upload.seriesKey !== seriesKey) {
+            await videoStore.updateUploadMeta(upload.id, { title: userTitle, seriesKey });
+          }
+        }
+      } catch {}
 
       this.setModalStep('Loading FFmpeg (first load may take 30s)...', 5);
 
@@ -238,6 +275,70 @@ export const uploadUI = {
         ${s}
       </div>`;
     }).join('');
+  },
+
+  async _buildSeriesIndex() {
+    try {
+      const uploads = await videoStore.getAllUploads();
+      const clips = await db.getAll(STORES.CLIPS);
+      const map = new Map();
+      for (const u of uploads) {
+        const key = (u.seriesKey && typeof u.seriesKey === 'string' && u.seriesKey) || String(u.name || '').replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        if (!key) continue;
+        let entry = map.get(key);
+        if (!entry) { entry = { title: u.title || String(u.name || '').replace(/\.[^.]+$/, ''), uploads: new Set(), lastPart: 0 }; map.set(key, entry); }
+        entry.uploads.add(u.id);
+      }
+      for (const c of clips) {
+        if (c.partNumber == null) continue;
+        const upId = c.uploadId;
+        for (const [key, entry] of map.entries()) {
+          if (entry.uploads.has(upId)) {
+            if (c.partNumber > entry.lastPart) entry.lastPart = c.partNumber;
+            break;
+          }
+        }
+      }
+      this._seriesIndex = map;
+      const contSel = document.getElementById('continueSeriesSelect');
+      if (contSel) {
+        const items = Array.from(map.entries()).map(([key, e]) => ({ key, title: e.title, lastPart: e.lastPart }));
+        items.sort((a, b) => a.title.localeCompare(b.title));
+        contSel.innerHTML = '<option value="">— Select existing title —</option>' +
+          items.map(it => `<option value="${it.key}">${it.title}${it.lastPart ? ` (last Part ${it.lastPart})` : ''}</option>`).join('');
+      }
+    } catch (e) {}
+  },
+
+  _applyContinuationSelection() {
+    try {
+      const sel = document.getElementById('continueSeriesSelect');
+      const key = sel?.value || '';
+      if (!key || !this._seriesIndex) return;
+      const entry = this._seriesIndex.get(key);
+      if (!entry) return;
+      const titleEl = document.getElementById('uploadVideoTitle');
+      if (titleEl) titleEl.value = entry.title;
+      const start = Math.max(1, (entry.lastPart || 0) + 1);
+      const sp = document.getElementById('seriesStartPart');
+      if (sp) { sp.value = String(start); try { sp.dispatchEvent(new Event('input')); } catch {} }
+    } catch {}
+  },
+
+  _recalcNextPartFromTitle() {
+    try {
+      const sm = !!document.getElementById('seriesMode')?.checked;
+      if (!sm) return;
+      const titleEl = document.getElementById('uploadVideoTitle');
+      const t = (titleEl?.value || '').trim();
+      if (!t) return;
+      const key = t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      if (!this._seriesIndex) return;
+      const entry = this._seriesIndex.get(key);
+      const next = Math.max(1, ((entry?.lastPart) || 0) + 1);
+      const sp = document.getElementById('seriesStartPart');
+      if (sp) { sp.value = String(next); try { sp.dispatchEvent(new Event('input')); } catch {} }
+    } catch {}
   },
 };
 

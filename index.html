@@ -235,6 +235,11 @@ if ('serviceWorker' in navigator) {
           <div class="card" style="margin-top:20px">
             <div class="card-title">Processing Settings</div>
 
+            <div class="form-group">
+              <label class="form-label">Video Title</label>
+              <input type="text" class="form-input" id="uploadVideoTitle" placeholder="Enter video title">
+            </div>
+
             <!-- Series Mode toggle -->
             <div class="form-group" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
               <div>
@@ -248,6 +253,7 @@ if ('serviceWorker' in navigator) {
                   document.getElementById('seriesModeTrack').style.background=sm?'var(--accent2)':'var(--bg3)';
                   document.getElementById('smartClipsGroup').style.display=sm?'none':'block';
                   document.getElementById('seriesPartsGroup').style.display=sm?'block':'none';
+                  const sc=document.getElementById('seriesContinuationGroup'); if(sc) sc.style.display=sm?'block':'none';
                 ">
               <div style="position:relative;width:42px;height:22px;flex-shrink:0;cursor:pointer;border-radius:22px;border:1px solid rgba(255,255,255,.1)"
                 id="seriesModeTrack"
@@ -277,6 +283,12 @@ if ('serviceWorker' in navigator) {
                     oninput="document.getElementById('seriesStartPartVal').textContent='Part '+this.value">
                   <span class="range-val" id="seriesStartPartVal">Part 1</span>
                 </div>
+              </div>
+              <div class="form-group" id="seriesContinuationGroup" style="display:none">
+                <label class="form-label">Continue Existing Series</label>
+                <select class="form-input form-select" id="continueSeriesSelect">
+                  <option value="">— Select existing title —</option>
+                </select>
               </div>
             </div>
 
