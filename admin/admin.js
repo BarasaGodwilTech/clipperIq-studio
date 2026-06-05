@@ -6,16 +6,32 @@ const authGoogleBtn = document.getElementById('authGoogleBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const authError = document.getElementById('authError');
 const saveBtn = document.getElementById('saveApiKeysBtn');
+const emailInput = document.getElementById('authEmail');
+const passwordInput = document.getElementById('authPassword');
+const viewLogin = document.getElementById('view-login');
+const viewAdmin = document.getElementById('view-admin');
 
 authBtn.addEventListener('click', async () => {
   authError.style.display = 'none';
-  const email = document.getElementById('authEmail').value.trim();
-  const password = document.getElementById('authPassword').value;
+  const email = (emailInput?.value || '').trim();
+  const password = passwordInput?.value || '';
+  if (!email || !password) {
+    authError.textContent = 'Enter email and password.';
+    authError.style.display = 'block';
+    return;
+  }
+  const prevText = authBtn.textContent;
+  authBtn.disabled = true;
+  authBtn.textContent = 'Signing in…';
   try {
     await loginUser(email, password);
+    if (passwordInput) passwordInput.value = '';
   } catch (err) {
-    authError.textContent = err.message;
+    authError.textContent = err && err.message ? err.message : 'Sign-in failed.';
     authError.style.display = 'block';
+  } finally {
+    authBtn.disabled = false;
+    authBtn.textContent = prevText;
   }
 });
 
@@ -61,8 +77,8 @@ saveBtn.addEventListener('click', async () => {
 
 onAuthStateChanged(auth, async (user) => {
   if (user) {
-    document.getElementById('view-login').style.display = 'none';
-    document.getElementById('view-admin').style.display = 'block';
+    if (viewLogin) viewLogin.style.display = 'none';
+    if (viewAdmin) viewAdmin.style.display = 'block';
     document.body.classList.remove('logged-out');
     
     // Load existing keys from Firestore to populate inputs
@@ -81,8 +97,8 @@ onAuthStateChanged(auth, async (user) => {
       console.warn("Could not fetch API keys on load:", err);
     }
   } else {
-    document.getElementById('view-admin').style.display = 'none';
-    document.getElementById('view-login').style.display = 'block';
+    if (viewAdmin) viewAdmin.style.display = 'none';
+    if (viewLogin) viewLogin.style.display = 'block';
     document.body.classList.add('logged-out');
   }
 });
@@ -93,8 +109,8 @@ onAuthStateChanged(auth, async (user) => {
     // If a redirect sign-in just completed, result.user will be set
     if (result && result.user) {
       // Force UI to the admin view quickly; onAuthStateChanged will also run
-      document.getElementById('view-login').style.display = 'none';
-      document.getElementById('view-admin').style.display = 'block';
+      if (viewLogin) viewLogin.style.display = 'none';
+      if (viewAdmin) viewAdmin.style.display = 'block';
       document.body.classList.remove('logged-out');
     }
   } catch (err) {
