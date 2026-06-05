@@ -28,6 +28,7 @@ class ClipperIQApp {
   constructor() {
     this.currentView = 'dashboard';
     this.compatOk = true;
+    this._connecting = false;
   }
 
   initAudioPreviews() {
@@ -104,6 +105,7 @@ class ClipperIQApp {
 
     await dashboard.refresh();
     await this.refreshAccountStatuses();
+    await this._updateDashPlatformStatus();
     this._startQueueBadgeUpdater();
 
     if ('serviceWorker' in navigator) {
@@ -182,7 +184,7 @@ class ClipperIQApp {
     this.currentView = view;
     this.closeSidebar?.();
 
-    if (view === 'dashboard') dashboard.refresh();
+    if (view === 'dashboard') { dashboard.refresh(); this._updateDashPlatformStatus(); }
     else if (view === 'clips') { clipsUI.refresh(); }
     else if (view === 'queue') queueUI.refresh();
     else if (view === 'accounts') this.refreshAccountStatuses();
@@ -383,27 +385,26 @@ class ClipperIQApp {
   }
 
   async connectPlatform(platform) {
+    if (this._connecting) return;
+    this._connecting = true;
+    const idMap = { TikTok: 'tiktok-connect', Instagram: 'ig-connect', YouTube: 'yt-connect' };
+    const btn = document.getElementById(idMap[platform]);
+    const prevText = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = 'Connecting…'; }
     try {
       notify.info(`Connecting to ${platform}...`);
       if (platform === 'TikTok') await tiktokAPI.connect();
       else if (platform === 'Instagram') await instagramAPI.connect();
       else if (platform === 'YouTube') await youtubeAPI.connect();
       notify.success(`${platform} connected!`);
-      
-      // Update all UI status indicators with error handling
-      try {
-        await this.refreshAccountStatuses();
-      } catch (e) {
-        console.warn('[Auth] Failed to refresh account statuses:', e);
-      }
-      try {
-        await this._updateDashPlatformStatus();
-      } catch (e) {
-        console.warn('[Auth] Failed to update dashboard status:', e);
-      }
+      await this.refreshAccountStatuses();
+      await this._updateDashPlatformStatus();
     } catch (err) {
       notify.error(`${platform} connection failed: ${err.message}`);
       console.error(`[Auth] ${platform} connect error:`, err);
+    } finally {
+      this._connecting = false;
+      if (btn) { btn.disabled = false; btn.textContent = prevText; }
     }
   }
 
@@ -588,29 +589,12 @@ class ClipperIQApp {
 
   async disconnectPlatform(platform) {
     if (!confirm(`Disconnect ${platform}? Scheduled posts will not be sent.`)) return;
-    
-    try {
-      if (platform === 'TikTok') await tiktokAPI.disconnect();
-      else if (platform === 'Instagram') await instagramAPI.disconnect();
-      else if (platform === 'YouTube') await youtubeAPI.disconnect();
-      
-      notify.info(`${platform} disconnected`);
-      
-      // Update all UI status indicators with error handling
-      try {
-        await this.refreshAccountStatuses();
-      } catch (e) {
-        console.warn('[Auth] Failed to refresh account statuses after disconnect:', e);
-      }
-      try {
-        await this._updateDashPlatformStatus();
-      } catch (e) {
-        console.warn('[Auth] Failed to update dashboard status after disconnect:', e);
-      }
-    } catch (err) {
-      notify.error(`Failed to disconnect ${platform}: ${err.message}`);
-      console.error(`[Auth] ${platform} disconnect error:`, err);
-    }
+    if (platform === 'TikTok') await tiktokAPI.disconnect();
+    else if (platform === 'Instagram') await instagramAPI.disconnect();
+    else if (platform === 'YouTube') await youtubeAPI.disconnect();
+    notify.info(`${platform} disconnected`);
+    await this.refreshAccountStatuses();
+    this._updateDashPlatformStatus();
   }
 
   async _updateDashPlatformStatus() {
@@ -619,24 +603,12 @@ class ClipperIQApp {
       ['instagram', 'ig-status-dash'],
       ['youtube', 'yt-status-dash'],
     ];
-    
     for (const [key, elId] of pairs) {
-      try {
-        const el = document.getElementById(elId);
-        if (!el) continue;
-        
-        const connected = await authStore.isConnected(key);
-        
-        // Defensive: ensure element has classList and textContent
-        if (el.classList) {
-          el.className = connected ? 'conn-status conn-ok' : 'conn-status conn-no';
-        }
-        if (el.textContent !== undefined) {
-          el.textContent = connected ? 'Connected' : 'Not connected';
-        }
-      } catch (e) {
-        console.warn(`[Auth] Failed to update status for ${key}:`, e);
-      }
+      const el = document.getElementById(elId);
+      if (!el) continue;
+      const connected = await authStore.isConnected(key);
+      el.className = connected ? 'conn-status conn-ok' : 'conn-status conn-no';
+      el.textContent = connected ? 'Connected' : 'Not connected';
     }
   }
 }
