@@ -390,6 +390,7 @@ class ClipperIQApp {
       else if (platform === 'YouTube') await youtubeAPI.connect();
       notify.success(`${platform} connected!`);
       await this.refreshAccountStatuses();
+      this._updateDashPlatformStatus();
     } catch (err) {
       notify.error(`${platform} connection failed: ${err.message}`);
       console.error(`[Auth] ${platform} connect error:`, err);
