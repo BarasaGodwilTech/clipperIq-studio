@@ -6,6 +6,7 @@ const path = require('path');
 
 const app = express();
 app.use(cors());
+app.use(express.json({ limit: '5mb' }));
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -36,6 +37,81 @@ app.post(
     } catch (e) {
       console.error('[Backend] Upload error:', e);
       res.status(500).json({ error: 'Upload failed' });
+    }
+  }
+);
+
+app.post('/api/tiktok/init', async (req, res) => {
+  try {
+    const auth = req.header('Authorization');
+    if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
+    const r = await fetch('https://open.tiktokapis.com/v2/post/publish/inbox/video/init/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8', Authorization: auth },
+      body: JSON.stringify(req.body || {}),
+    });
+    const data = await r.json().catch(() => ({}));
+    res.status(r.status).json(data);
+  } catch (e) {
+    console.error('[Backend] TikTok init error:', e);
+    res.status(500).json({ error: 'TikTok init failed' });
+  }
+});
+
+app.post('/api/tiktok/status', async (req, res) => {
+  try {
+    const auth = req.header('Authorization');
+    if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
+    const r = await fetch('https://open.tiktokapis.com/v2/post/publish/status/fetch/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8', Authorization: auth },
+      body: JSON.stringify(req.body || {}),
+    });
+    const data = await r.json().catch(() => ({}));
+    res.status(r.status).json(data);
+  } catch (e) {
+    console.error('[Backend] TikTok status error:', e);
+    res.status(500).json({ error: 'TikTok status failed' });
+  }
+});
+
+app.get('/api/tiktok/user', async (req, res) => {
+  try {
+    const auth = req.header('Authorization');
+    if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
+    const fields = req.query.fields || 'open_id,union_id,avatar_url,display_name,username,follower_count';
+    const r = await fetch(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(fields)}`, {
+      headers: { Authorization: auth },
+    });
+    const data = await r.json().catch(() => ({}));
+    res.status(r.status).json(data);
+  } catch (e) {
+    console.error('[Backend] TikTok user error:', e);
+    res.status(500).json({ error: 'TikTok user fetch failed' });
+  }
+});
+
+app.post(
+  '/api/tiktok/upload',
+  express.raw({ type: 'video/*', limit: '500mb' }),
+  async (req, res) => {
+    try {
+      const uploadUrl = req.query.upload_url;
+      if (!uploadUrl) return res.status(400).json({ error: 'Missing upload_url' });
+      const contentRange = req.header('Content-Range');
+      const r = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Range': contentRange || '',
+          'Content-Type': 'video/mp4',
+        },
+        body: req.body,
+      });
+      const txt = await r.text().catch(() => '');
+      res.status(r.status).send(txt);
+    } catch (e) {
+      console.error('[Backend] TikTok upload error:', e);
+      res.status(500).json({ error: 'TikTok upload failed' });
     }
   }
 );

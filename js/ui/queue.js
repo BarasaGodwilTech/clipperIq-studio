@@ -59,7 +59,10 @@ export const queueUI = {
   renderRow(j) {
     const statusBadge = {
       scheduled: `<span class="badge badge-scheduled" id="countdown-${j.id}">● ${formatCountdown(new Date(j.scheduledAt) - Date.now())}</span>`,
-      running:   `<span class="badge badge-processing">⚙ Posting...</span>`,
+      running:   `<span class="badge badge-processing">⚙ Posting…</span>` + (typeof j.progress === 'number' ? `
+        <div style="margin-top:6px;width:140px;height:6px;background:var(--border);border-radius:999px;overflow:hidden">
+          <div id="prog-${j.id}" style="height:100%;width:${Math.max(0, Math.min(100, j.progress))}%;background:var(--accent);transition:width .3s"></div>
+        </div>` : ''),
       posted:    `<span class="badge badge-posted">✓ Posted</span>`,
       failed:    `<span class="badge badge-failed">✕ Failed${j.retryCount ? ` (${j.retryCount}x)` : ''}</span>`,
       cancelled: `<span class="badge badge-draft">— Cancelled</span>`,
@@ -97,7 +100,7 @@ export const queueUI = {
 
   startCountdowns() {
     if (this.countdownInterval) clearInterval(this.countdownInterval);
-    this.countdownInterval = setInterval(() => {
+    this.countdownInterval = setInterval(async () => {
       for (const j of this.jobs) {
         if (j.status !== JOB_STATUS.SCHEDULED) continue;
         const el = document.getElementById(`countdown-${j.id}`);
@@ -105,7 +108,16 @@ export const queueUI = {
         const ms = new Date(j.scheduledAt) - Date.now();
         el.textContent = `● ${formatCountdown(ms)}`;
       }
-    }, 30000);
+      try {
+        const latest = await jobQueue.getAll();
+        for (const job of latest) {
+          if (job.status === JOB_STATUS.RUNNING && typeof job.progress === 'number') {
+            const bar = document.getElementById(`prog-${job.id}`);
+            if (bar) bar.style.width = `${Math.max(0, Math.min(100, job.progress))}%`;
+          }
+        }
+      } catch {}
+    }, 3000);
   },
 
   async cancel(id) {

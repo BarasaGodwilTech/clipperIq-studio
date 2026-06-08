@@ -93,10 +93,10 @@ export class CronEngine {
   async _publishToplatform(api, platform, videoBlob, post) {
     const p = platform.toLowerCase();
     if (p === 'tiktok') {
-      return api.publishVideo(videoBlob, post.caption, post.options);
+      return api.publishVideo(videoBlob, post.caption, post.options, (pct) => jobQueue.setProgress(post.id, pct));
     }
     if (p === 'instagram') {
-      return api.publishReel(videoBlob, post.caption, post.options);
+      return api.publishReel(videoBlob, post.caption, post.options, (pct) => jobQueue.setProgress(post.id, pct));
     }
     if (p === 'youtube') {
       return api.uploadShort(videoBlob, {
@@ -104,7 +104,7 @@ export class CronEngine {
         description: post.caption || '',
         tags: post.options?.tags || [],
         privacy: post.options?.privacy || 'public',
-      });
+      }, (pct) => jobQueue.setProgress(post.id, pct));
     }
     throw new Error(`Unsupported platform: ${platform}`);
   }

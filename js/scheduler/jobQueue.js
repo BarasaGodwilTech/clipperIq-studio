@@ -44,13 +44,14 @@ export const jobQueue = {
   },
 
   async markRunning(id) {
-    return db.updatePostStatus(id, JOB_STATUS.RUNNING);
+    return db.updatePostStatus(id, JOB_STATUS.RUNNING, { progress: 0 });
   },
 
   async markPosted(id, result = {}) {
     await db.updatePostStatus(id, JOB_STATUS.POSTED, {
       postedAt: new Date().toISOString(),
       result: JSON.stringify(result),
+      progress: 100,
     });
 
     const job = await db.get(STORES.SCHEDULED_POSTS, id);
@@ -75,6 +76,7 @@ export const jobQueue = {
       retryCount: (job.retryCount || 0) + 1,
       lastError: errorMsg,
       updatedAt: new Date().toISOString(),
+      progress: nextRetryAt ? 0 : (job.progress || 0),
     };
 
     if (nextRetryAt) update.scheduledAt = nextRetryAt;
@@ -82,7 +84,7 @@ export const jobQueue = {
   },
 
   async cancel(id) {
-    return db.updatePostStatus(id, JOB_STATUS.CANCELLED);
+    return db.updatePostStatus(id, JOB_STATUS.CANCELLED, { progress: null });
   },
 
   async reschedule(id, newTime) {
@@ -115,5 +117,11 @@ export const jobQueue = {
 
     if (!upcoming.length) return null;
     return upcoming[0] - now;
+  },
+
+  async setProgress(id, progress) {
+    const job = await db.get(STORES.SCHEDULED_POSTS, id);
+    if (!job) return;
+    return db.put(STORES.SCHEDULED_POSTS, { ...job, progress, updatedAt: new Date().toISOString() });
   },
 };

@@ -39,12 +39,16 @@ class ClipperIQApp {
     const rows = [];
     const safe = (v) => (v == null ? '—' : v);
 
-    // TikTok: fetch cached user from settings (set on connect) and use posted history for recents
+    // TikTok: refresh user via API when possible, then use posted history for recents
     try {
       const ttConnected = await authStore.isConnected('tiktok');
       if (ttConnected) {
-        const raw = await db.getSetting('tiktok_user');
-        const info = raw ? JSON.parse(raw) : {};
+        let info = {};
+        try { info = await tiktokAPI.fetchUserInfo(); }
+        catch {
+          const raw = await db.getSetting('tiktok_user');
+          info = raw ? JSON.parse(raw) : {};
+        }
         // build recent from posted history (best-effort)
         let recent = [];
         try {
@@ -469,6 +473,11 @@ class ClipperIQApp {
       }
 
       if (handleEl && connected) {
+        try {
+          if (p.key === 'tiktok') {
+            await tiktokAPI.fetchUserInfo();
+          }
+        } catch {}
         const raw = await db.getSetting(p.settingKey);
         try {
           const info = JSON.parse(raw || '{}');

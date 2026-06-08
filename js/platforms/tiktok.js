@@ -17,6 +17,14 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 120000) {
   } finally {
     clearTimeout(id);
   }
+
+async function getBackendBase() {
+  try {
+    const base = await db.getSetting('backend_base_url');
+    if (!base) return '';
+    return String(base).replace(/\/+$/,'');
+  } catch { return ''; }
+}
 }
 
 export class TikTokAPI {
@@ -128,7 +136,8 @@ export class TikTokAPI {
 
   async fetchUserInfo() {
     const token = await this.getValidToken();
-    const res = await fetch(`${TIKTOK_USER_URL}?fields=open_id,union_id,avatar_url,display_name,username,follower_count`, {
+    const base = await getBackendBase();
+    const res = await fetch(`${base}/api/tiktok/user`, {
       headers: { Authorization: `Bearer ${token.access_token}` },
     });
     const data = await res.json();
@@ -137,7 +146,7 @@ export class TikTokAPI {
     return data.data?.user;
   }
 
-  async publishVideo(videoBlob, caption, options = {}) {
+  async publishVideo(videoBlob, caption, options = {}, onProgress = null) {
     const token = await this.getValidToken();
     const { privacy = 'PUBLIC_TO_EVERYONE', allowComments = true, allowDuet = false } = options;
 
@@ -151,7 +160,11 @@ export class TikTokAPI {
     };
     const privacyLevel = privacyMap[privacy] || 'PUBLIC_TO_EVERYONE';
 
-    const initRes = await fetch(TIKTOK_VIDEO_INIT_URL, {
+    const CHUNK_SIZE = 5 * 1024 * 1024;
+    const totalChunks = Math.max(1, Math.ceil(videoBlob.size / CHUNK_SIZE));
+
+    const base = await getBackendBase();
+    const initRes = await fetch(`${base}/api/tiktok/init`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token.access_token}`,
@@ -169,8 +182,8 @@ export class TikTokAPI {
         source_info: {
           source: 'FILE_UPLOAD',
           video_size: videoBlob.size,
-          chunk_size: videoBlob.size,
-          total_chunk_count: 1,
+          chunk_size: CHUNK_SIZE,
+          total_chunk_count: totalChunks,
         },
       }),
     });
@@ -183,20 +196,38 @@ export class TikTokAPI {
 
     const { publish_id, upload_url } = initData.data;
 
-    const perMb = Math.ceil(videoBlob.size / (1024 * 1024));
-    const uploadTimeout = Math.min(600000, Math.max(120000, perMb * 4000));
-    const uploadRes = await fetchWithTimeout(upload_url, {
-      method: 'PUT',
-      headers: {
-        'Content-Range': `bytes 0-${videoBlob.size - 1}/${videoBlob.size}`,
-        'Content-Type': 'video/mp4',
-      },
-      body: videoBlob,
-    }, uploadTimeout);
+    const xhrUpload = (start, end, chunk, idx) => new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${base}/api/tiktok/upload?upload_url=${encodeURIComponent(upload_url)}`);
+      xhr.setRequestHeader('Content-Type', 'video/mp4');
+      xhr.setRequestHeader('Content-Range', `bytes ${start}-${end - 1}/${videoBlob.size}`);
+      xhr.upload.onprogress = (e) => {
+        if (!onProgress || !e.lengthComputable) return;
+        const sentSoFar = Math.min(end, start + e.loaded);
+        const ratio = sentSoFar / videoBlob.size;
+        onProgress(Math.round(ratio * 100 * 0.9));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(`Upload chunk failed: ${xhr.status}`));
+      };
+      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.send(chunk);
+    });
 
-    if (!uploadRes.ok) throw new Error(`TikTok upload failed: ${uploadRes.status}`);
+    if (onProgress) onProgress(5);
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, videoBlob.size);
+      const chunk = videoBlob.slice(start, end);
+      await xhrUpload(start, end, chunk, i);
+      if (onProgress) onProgress(Math.round(((i + 1) / totalChunks) * 90));
+    }
 
-    return this.pollPublishStatus(token.access_token, publish_id);
+    if (onProgress) onProgress(95);
+    const res = await this.pollPublishStatus(token.access_token, publish_id);
+    if (onProgress) onProgress(100);
+    return res;
   }
 
   async pollPublishStatus(accessToken, publishId, maxAttempts = 40) {
@@ -205,7 +236,8 @@ export class TikTokAPI {
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((r) => setTimeout(r, 3000));
       if (Date.now() - start > budgetMs) throw new Error('TikTok publish status polling timed out');
-      const res = await fetchWithTimeout(TIKTOK_VIDEO_STATUS_URL, {
+      const base = await getBackendBase();
+      const res = await fetchWithTimeout(`${base}/api/tiktok/status`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,

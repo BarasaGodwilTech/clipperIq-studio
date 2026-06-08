@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'clipperiq-v2';
+const CACHE_VERSION = 'clipperiq-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

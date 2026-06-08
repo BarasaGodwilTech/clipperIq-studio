@@ -108,7 +108,7 @@ export class InstagramAPI {
     return { accessToken: pageToken || token.access_token, igUserId };
   }
 
-  async publishReel(videoBlob, caption, options = {}) {
+  async publishReel(videoBlob, caption, options = {}, onProgress = null) {
     const { accessToken, igUserId } = await this.getValidCredentials();
     const { shareToFeed = true } = options;
 
@@ -117,20 +117,33 @@ export class InstagramAPI {
     if (!remoteUrl) {
       const base = (await db.getSetting('backend_base_url')) || 'http://localhost:3000';
       const filename = `reel-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`;
-      const upRes = await fetch(`${base}/upload/instagram-video?filename=${encodeURIComponent(filename)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'video/mp4' },
-        body: videoBlob,
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${base}/upload/instagram-video?filename=${encodeURIComponent(filename)}`);
+        xhr.setRequestHeader('Content-Type', 'video/mp4');
+        xhr.upload.onprogress = (e) => {
+          if (!onProgress || !e.lengthComputable) return;
+          const pct = Math.round((e.loaded / e.total) * 80);
+          onProgress(pct);
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText || '{}');
+              remoteUrl = data.url;
+            } catch {}
+            if (!remoteUrl) return reject(new Error('Relay server did not return a URL'));
+            resolve();
+          } else {
+            reject(new Error('Failed to upload video to relay server'));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Network error during relay upload'));
+        xhr.send(videoBlob);
       });
-      if (!upRes.ok) {
-        const err = await upRes.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to upload video to relay server');
-      }
-      const upData = await upRes.json();
-      remoteUrl = upData.url;
-      if (!remoteUrl) throw new Error('Relay server did not return a URL');
     }
 
+    if (onProgress) onProgress(85);
     const createRes = await fetch(`${GRAPH_BASE}/${igUserId}/media`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -150,6 +163,7 @@ export class InstagramAPI {
     const containerId = createData.id;
     await this.pollMediaStatus(igUserId, containerId, accessToken);
 
+    if (onProgress) onProgress(92);
     const publishRes = await fetch(`${GRAPH_BASE}/${igUserId}/media_publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -173,6 +187,7 @@ export class InstagramAPI {
       }
     } catch {}
 
+    if (onProgress) onProgress(100);
     return { mediaId: publishData.id, containerId, url, like_count, comments_count };
   }
 
