@@ -128,7 +128,17 @@ export class TikTokAPI {
 
   async publishVideo(videoBlob, caption, options = {}) {
     const token = await this.getValidToken();
-    const { privacy = 'SELF_ONLY', allowComments = true, allowDuet = false } = options;
+    const { privacy = 'PUBLIC_TO_EVERYONE', allowComments = true, allowDuet = false } = options;
+
+    // Map UI values to TikTok enums for privacy_level (backward compatible)
+    const privacyMap = {
+      PUBLIC_TO_EVERYONE: 'PUBLIC_TO_EVERYONE',
+      MUTUAL_FOLLOW_FRIENDS: 'MUTUAL_FOLLOW_FRIENDS',
+      SELF_ONLY: 'SELF_ONLY',
+      public: 'PUBLIC_TO_EVERYONE',
+      private: 'SELF_ONLY',
+    };
+    const privacyLevel = privacyMap[privacy] || 'PUBLIC_TO_EVERYONE';
 
     const initRes = await fetch(TIKTOK_VIDEO_INIT_URL, {
       method: 'POST',
@@ -139,7 +149,7 @@ export class TikTokAPI {
       body: JSON.stringify({
         post_info: {
           title: caption.slice(0, 150),
-          privacy_level: privacy,
+          privacy_level: privacyLevel,
           disable_duet: !allowDuet,
           disable_comment: !allowComments,
           disable_stitch: true,
@@ -156,7 +166,8 @@ export class TikTokAPI {
 
     const initData = await initRes.json();
     if (initData.error?.code && initData.error.code !== 'ok') {
-      throw new Error(initData.error.message || 'TikTok init failed');
+      const msg = initData.error.message || 'TikTok init failed';
+      throw new Error(msg);
     }
 
     const { publish_id, upload_url } = initData.data;
