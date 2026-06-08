@@ -218,6 +218,7 @@ export class InstagramAPI {
     await db.setSetting('instagram_user_id', null);
     await db.setSetting('instagram_page_access_token', null);
     await db.setSetting('instagram_user', null);
+    await db.setSetting('fb_oauth_state', null);
   }
 
   // Best-effort insights; requires appropriate IG permissions. Returns partials on errors.

@@ -222,6 +222,8 @@ export class YouTubeAPI {
     } catch {}
     await authStore.removeToken('youtube');
     await db.setSetting('youtube_channel', null);
+    await db.setSetting('google_oauth_state', null);
+    await db.setSetting('google_oauth_verifier', null);
   }
 
   // Best-effort channel + recent video insights

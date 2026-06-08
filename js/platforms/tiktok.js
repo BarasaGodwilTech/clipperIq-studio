@@ -137,6 +137,7 @@ export class TikTokAPI {
   async fetchUserInfo() {
     const token = await this.getValidToken();
     const base = await getBackendBase();
+    if (!base) throw new Error('Backend base URL not configured');
     const res = await fetch(`${base}/api/tiktok/user`, {
       headers: { Authorization: `Bearer ${token.access_token}` },
     });
@@ -287,6 +288,8 @@ export class TikTokAPI {
     } catch {}
     await authStore.removeToken('tiktok');
     await db.setSetting('tiktok_user', null);
+    await db.setSetting('tiktok_oauth_state', null);
+    await db.setSetting('tiktok_oauth_verifier', null);
   }
 }
 

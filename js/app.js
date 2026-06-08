@@ -484,8 +484,12 @@ class ClipperIQApp {
         const raw = await db.getSetting(p.settingKey);
         try {
           const info = JSON.parse(raw || '{}');
-          const handle = info.username || info.display_name || info.snippet?.title || info.name || 'Connected';
-          handleEl.textContent = `@${handle}`;
+          const baseHandle = info.username || info.display_name || info.snippet?.title || info.name || 'Connected';
+          if (p.key === 'tiktok' || p.key === 'instagram') {
+            handleEl.textContent = baseHandle ? `@${baseHandle}` : 'Connected';
+          } else {
+            handleEl.textContent = baseHandle || 'Connected';
+          }
         } catch { handleEl.textContent = 'Connected'; }
       } else if (handleEl) {
         handleEl.textContent = 'Not connected';
@@ -508,9 +512,18 @@ class ClipperIQApp {
       if (platform === 'TikTok') await tiktokAPI.connect();
       else if (platform === 'Instagram') await instagramAPI.connect();
       else if (platform === 'YouTube') await youtubeAPI.connect();
-      notify.success(`${platform} connected!`);
       await this.refreshAccountStatuses();
       await this._updateDashPlatformStatus();
+      // Show connected identity for reassurance
+      let handle = null;
+      if (platform === 'TikTok') {
+        try { const raw = await db.getSetting('tiktok_user'); const u = JSON.parse(raw||'{}'); if (u.username) handle = '@'+u.username; else if (u.display_name) handle = u.display_name; } catch {}
+      } else if (platform === 'Instagram') {
+        try { const raw = await db.getSetting('instagram_user'); const u = JSON.parse(raw||'{}'); if (u.username) handle = '@'+u.username; else if (u.name) handle = u.name; } catch {}
+      } else if (platform === 'YouTube') {
+        try { const raw = await db.getSetting('youtube_channel'); const ch = JSON.parse(raw||'{}'); handle = ch?.snippet?.title || null; } catch {}
+      }
+      if (handle) notify.success(`${platform} connected as ${handle}`); else notify.success(`${platform} connected!`);
     } catch (err) {
       notify.error(`${platform} connection failed: ${err.message}`);
       console.error(`[Auth] ${platform} connect error:`, err);
