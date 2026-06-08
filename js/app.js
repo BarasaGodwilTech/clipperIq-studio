@@ -135,7 +135,9 @@ class ClipperIQApp {
     container.innerHTML = html;
   }
 
-  initAudioPreviews() {
+  async initAudioPreviews() {
+    const baseSetting = await db.getSetting('backend_base_url').catch(() => null);
+    const audioProxyBase = baseSetting ? String(baseSetting).replace(/\/+$/,'') : '';
     // Helper function to bind audio preview logic
     const bindPreview = (urlId, fileId, previewId) => {
       const urlEl = document.getElementById(urlId);
@@ -151,8 +153,8 @@ class ClipperIQApp {
         } else if (urlEl.value.trim()) {
           // URL fallback (with proxy for TikTok/YouTube)
           let srcUrl = urlEl.value.trim();
-          if (srcUrl.match(/tiktok\.com|youtube\.com|youtu\.be/i)) {
-            srcUrl = `http://localhost:3000/api/audio?url=${encodeURIComponent(srcUrl)}`;
+          if (audioProxyBase && srcUrl.match(/tiktok\.com|youtube\.com|youtu\.be/i)) {
+            srcUrl = `${audioProxyBase}/api/audio?url=${encodeURIComponent(srcUrl)}`;
           }
           previewEl.src = srcUrl;
           previewEl.style.display = 'block';

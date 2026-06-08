@@ -17,6 +17,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 120000) {
   } finally {
     clearTimeout(id);
   }
+}
 
 async function getBackendBase() {
   try {
@@ -24,7 +25,6 @@ async function getBackendBase() {
     if (!base) return '';
     return String(base).replace(/\/+$/,'');
   } catch { return ''; }
-}
 }
 
 export class TikTokAPI {
