@@ -49,6 +49,10 @@ class ClipperIQApp {
           const raw = await db.getSetting('tiktok_user');
           info = raw ? JSON.parse(raw) : {};
         }
+        // Fallback to token open_id if username/display_name missing
+        if (!info?.username && !info?.display_name) {
+          try { const tok = await authStore.getToken('tiktok'); if (tok?.open_id) info.username = tok.open_id; } catch {}
+        }
         // build recent from posted history (best-effort)
         let recent = [];
         try {
@@ -484,7 +488,11 @@ class ClipperIQApp {
         const raw = await db.getSetting(p.settingKey);
         try {
           const info = JSON.parse(raw || '{}');
-          const baseHandle = info.username || info.display_name || info.snippet?.title || info.name || 'Connected';
+          let baseHandle = info.username || info.display_name || info.snippet?.title || info.name || '';
+          // Final fallback for TikTok: use token open_id
+          if (!baseHandle && p.key === 'tiktok') {
+            try { const tok = await authStore.getToken('tiktok'); if (tok?.open_id) baseHandle = tok.open_id; } catch {}
+          }
           if (p.key === 'tiktok' || p.key === 'instagram') {
             handleEl.textContent = baseHandle ? `@${baseHandle}` : 'Connected';
           } else {
