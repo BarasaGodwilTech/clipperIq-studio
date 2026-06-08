@@ -58,8 +58,13 @@ export class CronEngine {
       const videoBlob = await videoStore.getBlob(post.blobId);
       if (!videoBlob) throw new Error(`Video blob not found: ${post.blobId}`);
 
+      const withTimeout = (p, ms) => Promise.race([
+        p,
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Job timed out')), ms)),
+      ]);
+
       const result = await retryHandler.withRetry(
-        () => this._publishToplatform(api, post.platform, videoBlob, post),
+        () => withTimeout(this._publishToplatform(api, post.platform, videoBlob, post), 7 * 60 * 1000),
         post.id,
         (attempt, delay, err) => {
           console.warn(`[CronEngine] Retry ${attempt} for job ${post.id} in ${delay}ms:`, err.message);

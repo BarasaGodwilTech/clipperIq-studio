@@ -9,6 +9,16 @@ const TIKTOK_VIDEO_INIT_URL = 'https://open.tiktokapis.com/v2/post/publish/inbox
 const TIKTOK_VIDEO_STATUS_URL = 'https://open.tiktokapis.com/v2/post/publish/status/fetch/';
 const TIKTOK_USER_URL = 'https://open.tiktokapis.com/v2/user/info/';
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 120000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 export class TikTokAPI {
   async getConfig() {
     const clientKey = await db.getSetting('tiktok_client_key');
@@ -173,31 +183,36 @@ export class TikTokAPI {
 
     const { publish_id, upload_url } = initData.data;
 
-    const uploadRes = await fetch(upload_url, {
+    const perMb = Math.ceil(videoBlob.size / (1024 * 1024));
+    const uploadTimeout = Math.min(600000, Math.max(120000, perMb * 4000));
+    const uploadRes = await fetchWithTimeout(upload_url, {
       method: 'PUT',
       headers: {
         'Content-Range': `bytes 0-${videoBlob.size - 1}/${videoBlob.size}`,
         'Content-Type': 'video/mp4',
       },
       body: videoBlob,
-    });
+    }, uploadTimeout);
 
     if (!uploadRes.ok) throw new Error(`TikTok upload failed: ${uploadRes.status}`);
 
     return this.pollPublishStatus(token.access_token, publish_id);
   }
 
-  async pollPublishStatus(accessToken, publishId, maxAttempts = 10) {
+  async pollPublishStatus(accessToken, publishId, maxAttempts = 40) {
+    const start = Date.now();
+    const budgetMs = 300000;
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((r) => setTimeout(r, 3000));
-      const res = await fetch(TIKTOK_VIDEO_STATUS_URL, {
+      if (Date.now() - start > budgetMs) throw new Error('TikTok publish status polling timed out');
+      const res = await fetchWithTimeout(TIKTOK_VIDEO_STATUS_URL, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json; charset=UTF-8',
         },
         body: JSON.stringify({ publish_id: publishId }),
-      });
+      }, 15000);
       const data = await res.json();
       const status = data.data?.status;
       if (status === 'PUBLISH_COMPLETE') {
