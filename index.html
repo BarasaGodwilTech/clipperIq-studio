@@ -519,6 +519,7 @@ if ('serviceWorker' in navigator) {
       <div class="section-header">
         <div class="section-title">Analytics</div>
         <div class="section-sub" style="margin-top:4px">Connect platform accounts to view real analytics via their APIs</div>
+        <div style="font-size:11px;color:var(--dim);margin-top:4px">Insights appear when the connected apps grant the required permissions. Publish still works without insights.</div>
       </div>
 
       <div class="grid-4" style="margin-bottom:24px">
@@ -538,6 +539,13 @@ if ('serviceWorker' in navigator) {
         <div class="card">
           <div class="card-title">Queue Activity (Last 14 days)</div>
           <div id="analyticsChart" style="display:flex;align-items:flex-end;gap:3px;height:80px;margin-top:8px"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <div class="card-title">Platform Insights</div>
+        <div id="platformInsights" style="display:flex;flex-direction:column;gap:8px;color:var(--muted);font-size:13px">
+          <div>Connect accounts to load insights.</div>
         </div>
       </div>
 

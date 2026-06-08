@@ -1,6 +1,7 @@
 import { OAuthHelper } from './oauthHelper.js';
 import { authStore } from '../storage/authStore.js';
 import { db } from '../storage/db.js';
+import { uploadBlobAndGetUrl } from '../firebase.js';
 
 const FB_AUTH_URL = 'https://www.facebook.com/v18.0/dialog/oauth';
 const FB_TOKEN_URL = 'https://graph.facebook.com/v18.0/oauth/access_token';
@@ -111,21 +112,21 @@ export class InstagramAPI {
     const { accessToken, igUserId } = await this.getValidCredentials();
     const { shareToFeed = true } = options;
 
-    const blobUrl = URL.createObjectURL(videoBlob);
+    // Upload to Firebase Storage to obtain a fetchable URL for Instagram
+    const remoteUrl = await uploadBlobAndGetUrl(`instagram/uploads/${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`, videoBlob, 'video/mp4');
 
     const createRes = await fetch(`${GRAPH_BASE}/${igUserId}/media`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         media_type: 'REELS',
-        video_url: blobUrl,
+        video_url: remoteUrl,
         caption,
         share_to_feed: shareToFeed,
         access_token: accessToken,
       }),
     });
 
-    URL.revokeObjectURL(blobUrl);
 
     const createData = await createRes.json();
     if (createData.error) throw new Error(createData.error.message);
@@ -145,7 +146,18 @@ export class InstagramAPI {
     const publishData = await publishRes.json();
     if (publishData.error) throw new Error(publishData.error.message);
 
-    return { mediaId: publishData.id, containerId };
+    let url = null, like_count = null, comments_count = null;
+    try {
+      const infoRes = await fetch(`${GRAPH_BASE}/${publishData.id}?fields=permalink,like_count,comments_count&access_token=${accessToken}`);
+      const info = await infoRes.json();
+      if (!info.error) {
+        url = info.permalink || null;
+        like_count = info.like_count ?? null;
+        comments_count = info.comments_count ?? null;
+      }
+    } catch {}
+
+    return { mediaId: publishData.id, containerId, url, like_count, comments_count };
   }
 
   async pollMediaStatus(igUserId, containerId, accessToken, maxAttempts = 12) {
@@ -166,6 +178,30 @@ export class InstagramAPI {
     await db.setSetting('instagram_user_id', null);
     await db.setSetting('instagram_page_access_token', null);
     await db.setSetting('instagram_user', null);
+  }
+
+  // Best-effort insights; requires appropriate IG permissions. Returns partials on errors.
+  async getInsights(limit = 5) {
+    const out = { user: {}, recent: [] };
+    try {
+      const { accessToken, igUserId } = await this.getValidCredentials();
+      try {
+        const uRes = await fetch(
+          `${GRAPH_BASE}/${igUserId}?fields=followers_count,media_count,username,profile_picture_url&access_token=${accessToken}`
+        );
+        const uData = await uRes.json();
+        if (!uData.error) out.user = uData;
+      } catch {}
+
+      try {
+        const mRes = await fetch(
+          `${GRAPH_BASE}/${igUserId}/media?fields=id,media_type,like_count,comments_count,permalink,caption,timestamp&limit=${limit}&access_token=${accessToken}`
+        );
+        const mData = await mRes.json();
+        if (!mData.error) out.recent = mData.data || [];
+      } catch {}
+    } catch {}
+    return out;
   }
 }
 

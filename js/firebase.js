@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, setPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 import { db as localDb } from "./storage/db.js";
 
 // TODO: Replace with your actual Firebase project configuration
@@ -18,6 +19,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const firestore = getFirestore(app);
+export const storage = getStorage(app);
 
 // Prefer persistent sessions across reloads. Try IndexedDB first, then Local, Session, In-Memory.
 try {
@@ -115,3 +117,19 @@ export async function loginWithGoogle(options = {}) {
 }
 
 export { onAuthStateChanged };
+
+/**
+ * Upload a Blob to Firebase Storage and return a public download URL.
+ * The returned URL contains an access token and can be fetched by Instagram Graph.
+ */
+export async function uploadBlobAndGetUrl(path, blob, contentType = 'application/octet-stream') {
+  try {
+    const ref = storageRef(storage, path);
+    await uploadBytes(ref, blob, { contentType });
+    const url = await getDownloadURL(ref);
+    return url;
+  } catch (e) {
+    console.error('[Firebase] Storage upload failed:', e);
+    throw e;
+  }
+}

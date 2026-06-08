@@ -27,7 +27,7 @@ export class TikTokAPI {
     const params = OAuthHelper.buildQueryString({
       client_key: clientKey,
       response_type: 'code',
-      scope: 'user.info.basic,video.upload,video.publish',
+      scope: 'user.info.basic,user.info.profile,video.upload,video.publish',
       redirect_uri: OAuthHelper.getCallbackUrl(),
       state,
       code_challenge: challenge,
@@ -117,7 +117,7 @@ export class TikTokAPI {
 
   async fetchUserInfo() {
     const token = await this.getValidToken();
-    const res = await fetch(`${TIKTOK_USER_URL}?fields=open_id,union_id,avatar_url,display_name,username`, {
+    const res = await fetch(`${TIKTOK_USER_URL}?fields=open_id,union_id,avatar_url,display_name,username,follower_count`, {
       headers: { Authorization: `Bearer ${token.access_token}` },
     });
     const data = await res.json();
@@ -199,7 +199,20 @@ export class TikTokAPI {
       });
       const data = await res.json();
       const status = data.data?.status;
-      if (status === 'PUBLISH_COMPLETE') return { publishId, status, data };
+      if (status === 'PUBLISH_COMPLETE') {
+        const videoId = data.data?.video_id || data.data?.publish_video_id || null;
+        let url = null;
+        if (videoId) {
+          try {
+            const raw = await db.getSetting('tiktok_user');
+            if (raw) {
+              const user = JSON.parse(raw);
+              if (user?.username) url = `https://www.tiktok.com/@${user.username}/video/${videoId}`;
+            }
+          } catch {}
+        }
+        return { publishId, status, videoId, url, data };
+      }
       if (status === 'FAILED') throw new Error(`TikTok publish failed: ${JSON.stringify(data.data)}`);
     }
     throw new Error('TikTok publish status polling timed out');

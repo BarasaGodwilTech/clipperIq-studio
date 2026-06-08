@@ -31,6 +31,106 @@ class ClipperIQApp {
     this._connecting = false;
   }
 
+  async _refreshPlatformInsights() {
+    const containerId = 'platformInsights';
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const rows = [];
+    const safe = (v) => (v == null ? '—' : v);
+
+    // TikTok: fetch cached user from settings (set on connect) and use posted history for recents
+    try {
+      const ttConnected = await authStore.isConnected('tiktok');
+      if (ttConnected) {
+        const raw = await db.getSetting('tiktok_user');
+        const info = raw ? JSON.parse(raw) : {};
+        // build recent from posted history (best-effort)
+        let recent = [];
+        try {
+          const hist = await db.getAll(STORES.POSTED_HISTORY);
+          const lastTt = hist.filter(h => h.platform === 'TikTok').sort((a,b)=>new Date(b.postedAt||b.scheduledAt)-new Date(a.postedAt||a.scheduledAt)).slice(0,5);
+          const username = info?.username;
+          recent = lastTt.map(h => {
+            let url = null;
+            try {
+              const data = JSON.parse(h.result||'{}');
+              url = data.url || (data.videoId && username ? `https://www.tiktok.com/@${username}/video/${data.videoId}` : null);
+            } catch {}
+            return { title: h.caption?.slice(0,40) || `Clip #${h.clipId}`, url };
+          });
+        } catch {}
+
+        rows.push({
+          platform: 'TikTok',
+          color: 'var(--tiktok)',
+          avatar: info.avatar_url || '',
+          handle: info.username ? '@' + info.username : (info.display_name || 'Connected'),
+          followers: info.follower_count,
+          recent,
+        });
+      }
+    } catch {}
+
+    // Instagram: use new getInsights()
+    try {
+      const igConnected = await authStore.isConnected('instagram');
+      if (igConnected) {
+        const data = await instagramAPI.getInsights(5);
+        rows.push({
+          platform: 'Instagram',
+          color: 'var(--insta)',
+          avatar: data.user?.profile_picture_url || '',
+          handle: data.user?.username ? '@' + data.user.username : 'Connected',
+          followers: data.user?.followers_count,
+          recent: (data.recent || []).map(m => ({
+            title: m.caption?.slice(0, 40) || m.id,
+            url: m.permalink || null,
+            likes: m.like_count,
+            comments: m.comments_count,
+          })),
+        });
+      }
+    } catch {}
+
+    // YouTube: use new getInsights()
+    try {
+      const ytConnected = await authStore.isConnected('youtube');
+      if (ytConnected) {
+        const data = await youtubeAPI.getInsights(5);
+        const stats = data.channel?.statistics || {};
+        rows.push({
+          platform: 'YouTube',
+          color: 'var(--youtube)',
+          avatar: data.channel?.snippet?.thumbnails?.default?.url || '',
+          handle: data.channel?.snippet?.title || 'Connected',
+          followers: stats.subscriberCount,
+          recent: (data.recent || []).map(v => ({ title: v.title, url: v.url })),
+        });
+      }
+    } catch {}
+
+    if (rows.length === 0) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:13px">Connect accounts to see insights</div>';
+      return;
+    }
+
+    const html = rows.map(r => `
+      <div class="video-item">
+        <div class="video-thumb" style="width:28px;height:28px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.04)">
+          ${r.avatar ? `<img src="${r.avatar}" alt="" style="width:100%;height:100%;object-fit:cover">` : `<div style="width:14px;height:14px;border-radius:50%;background:${r.color}"></div>`}
+        </div>
+        <div class="video-info">
+          <div class="video-name" style="color:${r.color}">${r.platform}</div>
+          <div class="video-meta">${safe(r.handle)} · Followers/Subs: ${safe(r.followers)}</div>
+        </div>
+      </div>
+      ${r.recent && r.recent.length ? `<div style="margin:6px 0 10px 36px;display:flex;flex-direction:column;gap:6px">${r.recent.map(x => `<a ${x.url?`href=\"${x.url}\" target=\"_blank\" rel=\"noopener\"`:''} style="font-size:12px;color:var(--muted);text-decoration:none">• ${x.title || 'Post'}${(x.likes!=null||x.comments!=null)?` — ${x.likes??'–'}❤ · ${x.comments??'–'}💬`:''}</a>`).join('')}</div>` : ''}
+    `).join('');
+
+    container.innerHTML = html;
+  }
+
   initAudioPreviews() {
     // Helper function to bind audio preview logic
     const bindPreview = (urlId, fileId, previewId) => {
@@ -544,15 +644,25 @@ class ClipperIQApp {
       } else {
         const recent = [...posted].sort((a, b) => new Date(b.postedAt || b.scheduledAt) - new Date(a.postedAt || a.scheduledAt)).slice(0, 10);
         histEl.innerHTML = `<table class="data-table"><thead><tr><th>Clip</th><th>Platform</th><th>Posted At</th><th>Result</th></tr></thead><tbody>${
-          recent.map(p => `<tr>
-            <td>Clip #${p.clipId}</td>
-            <td style="color:${colors[p.platform]||'var(--accent)'};font-weight:600">${p.platform}</td>
-            <td style="color:var(--muted);font-size:12px">${new Date(p.postedAt || p.scheduledAt).toLocaleString()}</td>
-            <td><span class="badge badge-posted">✓ Posted</span></td>
-          </tr>`).join('')
+          recent.map(p => {
+            let link = '';
+            try {
+              const r = JSON.parse(p.result||'{}');
+              if (r.url) link = ` <a href="${r.url}" target="_blank" rel="noopener" title="Open" style="color:var(--muted)">↗</a>`;
+            } catch {}
+            return `<tr>
+              <td>Clip #${p.clipId}</td>
+              <td style="color:${colors[p.platform]||'var(--accent)'};font-weight:600">${p.platform}</td>
+              <td style="color:var(--muted);font-size:12px">${new Date(p.postedAt || p.scheduledAt).toLocaleString()}</td>
+              <td><span class="badge badge-posted">✓ Posted</span>${link}</td>
+            </tr>`;
+          }).join('')
         }</tbody></table>`;
       }
     }
+
+    // Best-effort platform insights
+    await this._refreshPlatformInsights();
   }
 
   async clearData() {

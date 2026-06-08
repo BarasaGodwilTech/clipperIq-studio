@@ -197,7 +197,8 @@ export class YouTubeAPI {
       if (res.ok) {
         const data = await res.json();
         if (onProgress) onProgress(100);
-        return { videoId: data.id, data };
+        const url = data.id ? `https://youtu.be/${data.id}` : null;
+        return { videoId: data.id, url, data };
       }
 
       const errData = await res.json().catch(() => ({}));
@@ -208,6 +209,40 @@ export class YouTubeAPI {
   async disconnect() {
     await authStore.removeToken('youtube');
     await db.setSetting('youtube_channel', null);
+  }
+
+  // Best-effort channel + recent video insights
+  async getInsights(limit = 5) {
+    const out = { channel: {}, recent: [] };
+    try {
+      const token = await this.getValidToken();
+      try {
+        const cRes = await fetch(`${YT_CHANNEL_URL}?part=snippet,statistics&mine=true`, {
+          headers: { Authorization: `Bearer ${token.access_token}` },
+        });
+        const cData = await cRes.json();
+        if (!cData.error && cData.items?.length) out.channel = cData.items[0];
+      } catch {}
+
+      try {
+        const id = out.channel?.id;
+        if (id) {
+          const sRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${id}&order=date&maxResults=${limit}&type=video`, {
+            headers: { Authorization: `Bearer ${token.access_token}` },
+          });
+          const sData = await sRes.json();
+          if (!sData.error) {
+            out.recent = (sData.items || []).map(i => ({
+              videoId: i.id?.videoId,
+              title: i.snippet?.title,
+              publishedAt: i.snippet?.publishedAt,
+              url: i.id?.videoId ? `https://youtu.be/${i.id.videoId}` : null,
+            }));
+          }
+        }
+      } catch {}
+    } catch {}
+    return out;
   }
 }
 
