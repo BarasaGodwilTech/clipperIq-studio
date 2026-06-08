@@ -135,17 +135,26 @@ export class TikTokAPI {
   }
 
   async fetchUserInfo() {
-    const token = await this.getValidToken();
+    let token = await this.getValidToken();
     const base = await getBackendBase();
     if (!base) throw new Error('Backend base URL not configured');
-    const res = await fetch(`${base}/api/tiktok/user`, {
+    const doFetch = async (accessToken) => fetch(`${base}/api/tiktok/user`, {
       headers: {
-        Authorization: `Bearer ${token.access_token}`,
+        Authorization: `Bearer ${accessToken}`,
         'ngrok-skip-browser-warning': 'true',
       },
     });
-    const data = await res.json();
-    if (data.error?.code && data.error.code !== 'ok') throw new Error(data.error.message);
+
+    let res = await doFetch(token.access_token);
+    if (res.status === 401) {
+      try {
+        await this.refreshToken();
+        token = await authStore.getToken('tiktok');
+        res = await doFetch(token.access_token);
+      } catch {}
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error?.message || `TikTok user fetch failed (${res.status})`);
     await db.setSetting('tiktok_user', JSON.stringify(data.data?.user || {}));
     return data.data?.user;
   }
