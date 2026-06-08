@@ -73,10 +73,19 @@ export class TikTokAPI {
       code_verifier: verifier,
     });
 
-    const res = await fetch(TIKTOK_TOKEN_URL, {
+    const base = await getBackendBase();
+    if (!base) throw new Error('Backend base URL not configured');
+    const res = await fetch(`${base}/api/tiktok/token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
+      headers: { 'Content-Type': 'application/json; charset=UTF-8', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        client_key: clientKey,
+        client_secret: clientSecret || '',
+        code,
+        redirect_uri: OAuthHelper.getCallbackUrl(),
+        code_verifier: verifier,
+      }),
     });
 
     const data = await res.json();
@@ -107,10 +116,17 @@ export class TikTokAPI {
       refresh_token: token.refresh_token,
     });
 
-    const res = await fetch(TIKTOK_TOKEN_URL, {
+    const base = await getBackendBase();
+    if (!base) throw new Error('Backend base URL not configured');
+    const res = await fetch(`${base}/api/tiktok/token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
+      headers: { 'Content-Type': 'application/json; charset=UTF-8', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({
+        grant_type: 'refresh_token',
+        client_key: clientKey,
+        client_secret: clientSecret || '',
+        refresh_token: token.refresh_token,
+      }),
     });
 
     const data = await res.json();

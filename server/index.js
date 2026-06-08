@@ -70,6 +70,51 @@ app.post('/api/tiktok/init', async (req, res) => {
   }
 });
 
+app.post('/api/tiktok/token', async (req, res) => {
+  try {
+    const {
+      grant_type,
+      client_key,
+      client_secret = '',
+      code,
+      redirect_uri,
+      code_verifier,
+      refresh_token,
+    } = req.body || {};
+    if (!grant_type || !client_key) {
+      return res.status(400).json({ error: 'Missing grant_type or client_key' });
+    }
+    const body = new URLSearchParams({
+      grant_type,
+      client_key,
+      client_secret,
+    });
+    if (grant_type === 'authorization_code') {
+      if (!code || !redirect_uri || !code_verifier) {
+        return res.status(400).json({ error: 'Missing parameters for authorization_code' });
+      }
+      body.set('code', code);
+      body.set('redirect_uri', redirect_uri);
+      body.set('code_verifier', code_verifier);
+    } else if (grant_type === 'refresh_token') {
+      if (!refresh_token) {
+        return res.status(400).json({ error: 'Missing refresh_token' });
+      }
+      body.set('refresh_token', refresh_token);
+    }
+    const r = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    const data = await r.json().catch(() => ({}));
+    res.status(r.status).json(data);
+  } catch (e) {
+    console.error('[Backend] TikTok token error:', e);
+    res.status(500).json({ error: 'TikTok token exchange failed' });
+  }
+});
+
 app.post('/api/tiktok/revoke', async (req, res) => {
   try {
     const { client_key, client_secret = '', token, token_type = 'access_token' } = req.body || {};
