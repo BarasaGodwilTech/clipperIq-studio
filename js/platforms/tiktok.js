@@ -287,17 +287,17 @@ export class TikTokAPI {
       const token = await authStore.getToken('tiktok');
       const { clientKey, clientSecret } = await this.getConfig().catch(() => ({ clientKey: null, clientSecret: null }));
       const revokeToken = token?.refresh_token || token?.access_token;
-      if (revokeToken && clientKey) {
-        const body = new URLSearchParams({
-          client_key: clientKey,
-          client_secret: clientSecret || '',
-          token: revokeToken,
-          token_type: token?.refresh_token ? 'refresh_token' : 'access_token',
-        });
-        await fetch(TIKTOK_REVOKE_URL, {
+      const base = await getBackendBase();
+      if (revokeToken && clientKey && base) {
+        await fetch(`${base}/api/tiktok/revoke`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: body.toString(),
+          headers: { 'Content-Type': 'application/json; charset=UTF-8', 'ngrok-skip-browser-warning': 'true' },
+          body: JSON.stringify({
+            client_key: clientKey,
+            client_secret: clientSecret || '',
+            token: revokeToken,
+            token_type: token?.refresh_token ? 'refresh_token' : 'access_token',
+          }),
         }).catch(() => {});
       }
     } catch {}

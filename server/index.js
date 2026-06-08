@@ -70,6 +70,29 @@ app.post('/api/tiktok/init', async (req, res) => {
   }
 });
 
+app.post('/api/tiktok/revoke', async (req, res) => {
+  try {
+    const { client_key, client_secret = '', token, token_type = 'access_token' } = req.body || {};
+    if (!client_key || !token) return res.status(400).json({ error: 'Missing client_key or token' });
+    const body = new URLSearchParams({
+      client_key,
+      client_secret,
+      token,
+      token_type,
+    });
+    const r = await fetch('https://open.tiktokapis.com/v2/oauth/revoke/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    const data = await r.json().catch(() => ({}));
+    res.status(r.status).json(data);
+  } catch (e) {
+    console.error('[Backend] TikTok revoke error:', e);
+    res.status(500).json({ error: 'TikTok revoke failed' });
+  }
+});
+
 app.post('/api/tiktok/status', async (req, res) => {
   try {
     const auth = req.header('Authorization');
