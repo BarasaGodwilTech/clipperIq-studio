@@ -121,6 +121,7 @@ export class InstagramAPI {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', `${base}/upload/instagram-video?filename=${encodeURIComponent(filename)}`);
         xhr.setRequestHeader('Content-Type', 'video/mp4');
+        xhr.setRequestHeader('ngrok-skip-browser-warning', 'true');
         xhr.upload.onprogress = (e) => {
           if (!onProgress || !e.lengthComputable) return;
           const pct = Math.round((e.loaded / e.total) * 80);

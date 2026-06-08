@@ -139,7 +139,10 @@ export class TikTokAPI {
     const base = await getBackendBase();
     if (!base) throw new Error('Backend base URL not configured');
     const res = await fetch(`${base}/api/tiktok/user`, {
-      headers: { Authorization: `Bearer ${token.access_token}` },
+      headers: {
+        Authorization: `Bearer ${token.access_token}`,
+        'ngrok-skip-browser-warning': 'true',
+      },
     });
     const data = await res.json();
     if (data.error?.code && data.error.code !== 'ok') throw new Error(data.error.message);
@@ -170,6 +173,7 @@ export class TikTokAPI {
       headers: {
         Authorization: `Bearer ${token.access_token}`,
         'Content-Type': 'application/json; charset=UTF-8',
+        'ngrok-skip-browser-warning': 'true',
       },
       body: JSON.stringify({
         post_info: {
@@ -202,6 +206,7 @@ export class TikTokAPI {
       xhr.open('POST', `${base}/api/tiktok/upload?upload_url=${encodeURIComponent(upload_url)}`);
       xhr.setRequestHeader('Content-Type', 'video/mp4');
       xhr.setRequestHeader('Content-Range', `bytes ${start}-${end - 1}/${videoBlob.size}`);
+      xhr.setRequestHeader('ngrok-skip-browser-warning', 'true');
       xhr.upload.onprogress = (e) => {
         if (!onProgress || !e.lengthComputable) return;
         const sentSoFar = Math.min(end, start + e.loaded);
@@ -243,6 +248,7 @@ export class TikTokAPI {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json; charset=UTF-8',
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({ publish_id: publishId }),
       }, 15000);
