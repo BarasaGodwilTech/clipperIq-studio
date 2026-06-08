@@ -1,4 +1,5 @@
 import { auth, firestore, onAuthStateChanged, loginUser, registerUser, logoutUser, loginWithGoogle, saveApiKeysToFirebase } from '../js/firebase.js';
+import { db } from '../js/storage/db.js';
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 const authBtn = document.getElementById('authBtn');
@@ -7,6 +8,8 @@ const authGoogleBtn = document.getElementById('authGoogleBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const authError = document.getElementById('authError');
 const saveBtn = document.getElementById('saveApiKeysBtn');
+const saveBackendUrlBtn = document.getElementById('saveBackendUrlBtn');
+const backendBaseUrlInput = document.getElementById('backendBaseUrl');
 const toggleToSignUp = document.getElementById('toggleToSignUp');
 const toggleToSignIn = document.getElementById('toggleToSignIn');
 const emailSignInForm = document.getElementById('emailSignInForm');
@@ -88,6 +91,25 @@ authGoogleBtn.addEventListener('click', async () => {
 
 logoutBtn.addEventListener('click', () => logoutUser());
 
+// Save backend_base_url to IndexedDB settings
+saveBackendUrlBtn?.addEventListener('click', async () => {
+  try {
+    const valRaw = backendBaseUrlInput.value.trim();
+    const val = valRaw.replace(/\/$/, '');
+    if (!/^https?:\/\//i.test(val)) {
+      alert('Please enter a valid URL starting with https:// (recommended).');
+      return;
+    }
+    await db.setSetting('backend_base_url', val);
+    // Also save to Firestore so other devices can pick it up via sync
+    try { await saveApiKeysToFirebase({ backend_base_url: val }); } catch (e) { console.warn('Saving to Firestore failed, local setting persisted:', e); }
+    document.getElementById('backendSaveStatus').style.display = 'block';
+    setTimeout(() => document.getElementById('backendSaveStatus').style.display = 'none', 3000);
+  } catch (err) {
+    alert('Failed to save backend URL: ' + (err?.message || err));
+  }
+});
+
 saveBtn.addEventListener('click', async () => {
   saveBtn.disabled = true;
   saveBtn.textContent = 'Saving...';
@@ -127,9 +149,18 @@ onAuthStateChanged(auth, async (user) => {
         if (data.facebook_app_secret) document.getElementById('facebookAppSecret').value = data.facebook_app_secret;
         if (data.google_client_id) document.getElementById('googleClientId').value = data.google_client_id;
         if (data.google_client_secret) document.getElementById('googleClientSecret').value = data.google_client_secret;
+        if (data.backend_base_url && backendBaseUrlInput) backendBaseUrlInput.value = data.backend_base_url;
       }
     } catch (err) {
       console.warn("Could not fetch API keys on load:", err);
+    }
+
+    // Prefill backend_base_url from IndexedDB settings
+    try {
+      const base = await db.getSetting('backend_base_url');
+      if (base && backendBaseUrlInput && !backendBaseUrlInput.value) backendBaseUrlInput.value = base;
+    } catch (e) {
+      console.warn('Could not load backend_base_url from settings:', e);
     }
   } else {
     document.getElementById('view-admin').style.display = 'none';

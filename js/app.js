@@ -202,10 +202,11 @@ class ClipperIQApp {
       queueUI.refresh();
     };
 
-    cronEngine.start();
-
-    // Sync keys from Firebase to local IndexedDB anonymously
+    // Sync global settings (including backend_base_url) from Firestore first
     await syncApiKeysFromFirebase();
+
+    // Start scheduler after settings are available
+    cronEngine.start();
 
     await dashboard.refresh();
     await this.refreshAccountStatuses();
