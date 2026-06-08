@@ -9,6 +9,30 @@ const TIKTOK_VIDEO_INIT_URL = 'https://open.tiktokapis.com/v2/post/publish/inbox
 const TIKTOK_VIDEO_STATUS_URL = 'https://open.tiktokapis.com/v2/post/publish/status/fetch/';
 const TIKTOK_USER_URL = 'https://open.tiktokapis.com/v2/user/info/';
 
+// Simple rate limiter to prevent request spam
+class RateLimiter {
+  constructor(maxRequests = 5, windowMs = 60000) {
+    this.maxRequests = maxRequests;
+    this.windowMs = windowMs;
+    this.requests = [];
+  }
+
+  async wait() {
+    const now = Date.now();
+    this.requests = this.requests.filter(t => now - t < this.windowMs);
+    if (this.requests.length >= this.maxRequests) {
+      const oldest = this.requests[0];
+      const waitTime = this.windowMs - (now - oldest);
+      if (waitTime > 0) {
+        await new Promise(r => setTimeout(r, waitTime));
+      }
+    }
+    this.requests.push(now);
+  }
+}
+
+const apiRateLimiter = new RateLimiter(10, 60000); // 10 requests per minute
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 120000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -19,12 +43,49 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 120000) {
   }
 }
 
+async function fetchWithRetry(url, options = {}, maxRetries = 3, baseDelay = 1000) {
+  await apiRateLimiter.wait();
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetchWithTimeout(url, options, 30000);
+      if (res.status === 401 || res.status === 403) {
+        // Don't retry auth errors
+        return res;
+      }
+      if (res.ok || attempt === maxRetries) {
+        return res;
+      }
+      // Retry on 5xx errors with exponential backoff
+      if (res.status >= 500) {
+        const delay = baseDelay * Math.pow(2, attempt);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        const delay = baseDelay * Math.pow(2, attempt);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastError || new Error('Request failed after retries');
+}
+
 async function getBackendBase() {
   try {
     const base = await db.getSetting('backend_base_url');
-    if (!base) return '';
-    return String(base).replace(/\/+$/,'');
-  } catch { return ''; }
+    if (!base) throw new Error('Backend base URL not configured. Please set it in Settings → API Keys or ask your administrator.');
+    const cleanBase = String(base).replace(/\/+$/,'');
+    if (!cleanBase.match(/^https?:\/\/.+/)) {
+      throw new Error('Invalid backend base URL format. Must start with http:// or https://');
+    }
+    return cleanBase;
+  } catch (err) {
+    throw new Error(err.message || 'Backend base URL not configured');
+  }
 }
 
 export class TikTokAPI {
@@ -74,8 +135,7 @@ export class TikTokAPI {
     });
 
     const base = await getBackendBase();
-    if (!base) throw new Error('Backend base URL not configured');
-    const res = await fetch(`${base}/api/tiktok/token`, {
+    const res = await fetchWithRetry(`${base}/api/tiktok/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=UTF-8', 'ngrok-skip-browser-warning': 'true' },
       body: JSON.stringify({
@@ -106,7 +166,7 @@ export class TikTokAPI {
 
   async refreshToken() {
     const token = await authStore.getToken('tiktok');
-    if (!token?.refresh_token) throw new Error('No refresh token available');
+    if (!token?.refresh_token) throw new Error('No refresh token available. Please reconnect your TikTok account.');
     const { clientKey, clientSecret } = await this.getConfig();
 
     const body = new URLSearchParams({
@@ -117,8 +177,7 @@ export class TikTokAPI {
     });
 
     const base = await getBackendBase();
-    if (!base) throw new Error('Backend base URL not configured');
-    const res = await fetch(`${base}/api/tiktok/token`, {
+    const res = await fetchWithRetry(`${base}/api/tiktok/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=UTF-8', 'ngrok-skip-browser-warning': 'true' },
       body: JSON.stringify({
@@ -130,7 +189,11 @@ export class TikTokAPI {
     });
 
     const data = await res.json();
-    if (data.error) throw new Error(data.error_description || data.error);
+    if (data.error) {
+      // If refresh fails permanently, clear the token
+      await authStore.removeToken('tiktok');
+      throw new Error(`TikTok token refresh failed: ${data.error_description || data.error}. Please reconnect your account.`);
+    }
 
     await authStore.setToken('tiktok', {
       ...token,
@@ -153,8 +216,7 @@ export class TikTokAPI {
   async fetchUserInfo() {
     let token = await this.getValidToken();
     const base = await getBackendBase();
-    if (!base) throw new Error('Backend base URL not configured');
-    const doFetch = async (accessToken) => fetch(`${base}/api/tiktok/user`, {
+    const doFetch = async (accessToken) => fetchWithRetry(`${base}/api/tiktok/user`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'ngrok-skip-browser-warning': 'true',
@@ -166,8 +228,11 @@ export class TikTokAPI {
       try {
         await this.refreshToken();
         token = await authStore.getToken('tiktok');
+        if (!token) throw new Error('Token refresh failed');
         res = await doFetch(token.access_token);
-      } catch {}
+      } catch (err) {
+        throw new Error(`TikTok authentication failed: ${err.message}. Please reconnect your account.`);
+      }
     }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error?.message || `TikTok user fetch failed (${res.status})`);
@@ -193,7 +258,7 @@ export class TikTokAPI {
     const totalChunks = Math.max(1, Math.ceil(videoBlob.size / CHUNK_SIZE));
 
     const base = await getBackendBase();
-    const initRes = await fetch(`${base}/api/tiktok/init`, {
+    const initRes = await fetchWithRetry(`${base}/api/tiktok/init`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token.access_token}`,
@@ -268,7 +333,7 @@ export class TikTokAPI {
       await new Promise((r) => setTimeout(r, 3000));
       if (Date.now() - start > budgetMs) throw new Error('TikTok publish status polling timed out');
       const base = await getBackendBase();
-      const res = await fetchWithTimeout(`${base}/api/tiktok/status`, {
+      const res = await fetchWithRetry(`${base}/api/tiktok/status`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -276,7 +341,7 @@ export class TikTokAPI {
           'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({ publish_id: publishId }),
-      }, 15000);
+      }, 0, 15000);
       const data = await res.json();
       const status = data.data?.status;
       if (status === 'PUBLISH_COMPLETE') {
