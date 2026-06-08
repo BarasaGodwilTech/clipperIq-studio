@@ -207,6 +207,23 @@ class ClipperIQApp {
     // Sync global settings (including backend_base_url) from Firestore first
     await syncApiKeysFromFirebase();
 
+    // Check backend connectivity
+    try {
+      const backendBase = await db.getSetting('backend_base_url');
+      if (backendBase) {
+        const healthRes = await fetch(`${String(backendBase).replace(/\/+$/,'')}/health`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(5000),
+        }).catch(() => null);
+        if (!healthRes || !healthRes.ok) {
+          console.warn('[ClipperIQ] Backend health check failed. Some features may not work.');
+          notify.warn('Backend server is not accessible. Video publishing may be affected.');
+        }
+      }
+    } catch (err) {
+      console.warn('[ClipperIQ] Backend health check error:', err.message);
+    }
+
     // Start scheduler after settings are available
     cronEngine.start();
 

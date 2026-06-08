@@ -10,7 +10,7 @@ export class InstagramAPI {
   async getConfig() {
     const appId = await db.getSetting('facebook_app_id');
     const appSecret = await db.getSetting('facebook_app_secret');
-    if (!appId) throw new Error('Facebook App ID not configured. Go to Settings → API Keys.');
+    if (!appId) throw new Error('Facebook App ID not configured. Please set it in Settings → API Keys or ask your administrator.');
     return { appId, appSecret };
   }
 
@@ -101,10 +101,10 @@ export class InstagramAPI {
 
   async getValidCredentials() {
     const token = await authStore.getToken('instagram');
-    if (!token) throw new Error('Instagram not connected');
+    if (!token) throw new Error('Instagram not connected. Please connect your account in the Accounts tab.');
     const igUserId = await db.getSetting('instagram_user_id');
     const pageToken = await db.getSetting('instagram_page_access_token');
-    if (!igUserId) throw new Error('Instagram user ID not found');
+    if (!igUserId) throw new Error('Instagram user ID not found. Please reconnect your account.');
     return { accessToken: pageToken || token.access_token, igUserId };
   }
 
