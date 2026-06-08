@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'clipperiq-v4';
+const CACHE_VERSION = 'clipperiq-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -88,7 +88,14 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    fetch(request).catch(() => caches.match(request))
+    (async () => {
+      try {
+        return await fetch(request);
+      } catch (e) {
+        const cached = await caches.match(request);
+        return cached || Response.error();
+      }
+    })()
   );
 });
 
