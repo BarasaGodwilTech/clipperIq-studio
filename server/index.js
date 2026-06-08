@@ -10,7 +10,7 @@ const app = express();
 const corsOptions = {
   origin: true, // reflect request origin
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Content-Range', 'Range'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Content-Range', 'Range', 'ngrok-skip-browser-warning'],
   exposedHeaders: ['Content-Range', 'Range'],
   credentials: false,
   maxAge: 86400,
