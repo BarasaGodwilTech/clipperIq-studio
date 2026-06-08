@@ -1,9 +1,44 @@
 const express = require('express');
 const cors = require('cors');
 const ytDlp = require('youtube-dl-exec');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(cors());
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '1y', immutable: true }));
+app.post(
+  '/upload/instagram-video',
+  express.raw({ type: 'video/*', limit: '200mb' }),
+  (req, res) => {
+    try {
+      if (!req.body || !Buffer.isBuffer(req.body)) {
+        return res.status(400).json({ error: 'No video data provided' });
+      }
+      const hint = (req.query.filename || '').toString();
+      const safeName = hint && /[^\\/:*?"<>|]/g.test(hint)
+        ? hint.replace(/[^a-zA-Z0-9_.-]/g, '_')
+        : `ig-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`;
+      const filePath = path.join(UPLOAD_DIR, safeName);
+      fs.writeFile(filePath, req.body, (err) => {
+        if (err) {
+          console.error('[Backend] Failed to save upload:', err);
+          return res.status(500).json({ error: 'Failed to save file' });
+        }
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const url = `${baseUrl}/uploads/${encodeURIComponent(path.basename(filePath))}`;
+        res.json({ url });
+      });
+    } catch (e) {
+      console.error('[Backend] Upload error:', e);
+      res.status(500).json({ error: 'Upload failed' });
+    }
+  }
+);
 
 app.get('/api/audio', (req, res) => {
   const videoUrl = req.query.url;

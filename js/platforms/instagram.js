@@ -1,7 +1,6 @@
 import { OAuthHelper } from './oauthHelper.js';
 import { authStore } from '../storage/authStore.js';
 import { db } from '../storage/db.js';
-import { uploadBlobAndGetUrl } from '../firebase.js';
 
 const FB_AUTH_URL = 'https://www.facebook.com/v18.0/dialog/oauth';
 const FB_TOKEN_URL = 'https://graph.facebook.com/v18.0/oauth/access_token';
@@ -26,6 +25,7 @@ export class InstagramAPI {
       scope: 'instagram_basic,instagram_content_publish,pages_read_engagement',
       response_type: 'code',
       state,
+      auth_type: 'rerequest',
     });
 
     const popup = OAuthHelper.openPopup(`${FB_AUTH_URL}?${params}`, 'Connect Instagram');
@@ -112,8 +112,24 @@ export class InstagramAPI {
     const { accessToken, igUserId } = await this.getValidCredentials();
     const { shareToFeed = true } = options;
 
-    // Upload to Firebase Storage to obtain a fetchable URL for Instagram
-    const remoteUrl = await uploadBlobAndGetUrl(`instagram/uploads/${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`, videoBlob, 'video/mp4');
+    // Obtain a fetchable URL for Instagram: prefer provided URL, otherwise upload to backend relay
+    let remoteUrl = options.videoUrl || null;
+    if (!remoteUrl) {
+      const base = (await db.getSetting('backend_base_url')) || 'http://localhost:3000';
+      const filename = `reel-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`;
+      const upRes = await fetch(`${base}/upload/instagram-video?filename=${encodeURIComponent(filename)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'video/mp4' },
+        body: videoBlob,
+      });
+      if (!upRes.ok) {
+        const err = await upRes.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to upload video to relay server');
+      }
+      const upData = await upRes.json();
+      remoteUrl = upData.url;
+      if (!remoteUrl) throw new Error('Relay server did not return a URL');
+    }
 
     const createRes = await fetch(`${GRAPH_BASE}/${igUserId}/media`, {
       method: 'POST',
@@ -174,6 +190,15 @@ export class InstagramAPI {
   }
 
   async disconnect() {
+    try {
+      const token = await authStore.getToken('instagram');
+      if (token?.access_token) {
+        // Best-effort revoke app permissions so reconnect requires fresh consent
+        await fetch(`${GRAPH_BASE}/me/permissions?access_token=${encodeURIComponent(token.access_token)}`, {
+          method: 'DELETE',
+        }).catch(() => {});
+      }
+    } catch {}
     await authStore.removeToken('instagram');
     await db.setSetting('instagram_user_id', null);
     await db.setSetting('instagram_page_access_token', null);

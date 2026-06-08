@@ -4,6 +4,7 @@ import { db } from '../storage/db.js';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const YT_UPLOAD_URL = 'https://www.googleapis.com/upload/youtube/v3/videos';
 const YT_CHANNEL_URL = 'https://www.googleapis.com/youtube/v3/channels';
 const CHUNK_SIZE = 5 * 1024 * 1024;
@@ -207,6 +208,18 @@ export class YouTubeAPI {
   }
 
   async disconnect() {
+    try {
+      const token = await authStore.getToken('youtube');
+      const revoke = token?.refresh_token || token?.access_token;
+      if (revoke) {
+        const body = new URLSearchParams({ token: revoke });
+        await fetch(GOOGLE_REVOKE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        }).catch(() => {});
+      }
+    } catch {}
     await authStore.removeToken('youtube');
     await db.setSetting('youtube_channel', null);
   }

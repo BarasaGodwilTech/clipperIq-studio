@@ -4,6 +4,7 @@ import { db } from '../storage/db.js';
 
 const TIKTOK_AUTH_URL = 'https://www.tiktok.com/v2/auth/authorize/';
 const TIKTOK_TOKEN_URL = 'https://open.tiktokapis.com/v2/oauth/token/';
+const TIKTOK_REVOKE_URL = 'https://open.tiktokapis.com/v2/oauth/revoke/';
 const TIKTOK_VIDEO_INIT_URL = 'https://open.tiktokapis.com/v2/post/publish/inbox/video/init/';
 const TIKTOK_VIDEO_STATUS_URL = 'https://open.tiktokapis.com/v2/post/publish/status/fetch/';
 const TIKTOK_USER_URL = 'https://open.tiktokapis.com/v2/user/info/';
@@ -219,6 +220,24 @@ export class TikTokAPI {
   }
 
   async disconnect() {
+    try {
+      const token = await authStore.getToken('tiktok');
+      const { clientKey, clientSecret } = await this.getConfig().catch(() => ({ clientKey: null, clientSecret: null }));
+      const revokeToken = token?.refresh_token || token?.access_token;
+      if (revokeToken && clientKey) {
+        const body = new URLSearchParams({
+          client_key: clientKey,
+          client_secret: clientSecret || '',
+          token: revokeToken,
+          token_type: token?.refresh_token ? 'refresh_token' : 'access_token',
+        });
+        await fetch(TIKTOK_REVOKE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        }).catch(() => {});
+      }
+    } catch {}
     await authStore.removeToken('tiktok');
     await db.setSetting('tiktok_user', null);
   }
