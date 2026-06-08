@@ -4,6 +4,7 @@ import { videoProcessor } from '../core/videoProcessor.js';
 import { jobQueue } from '../scheduler/jobQueue.js';
 import { notify } from './notifications.js';
 import { authStore } from '../storage/authStore.js';
+import { getBackendBaseUrl } from '../core/config.js';
 
 function formatTime(sec) {
   const m = Math.floor(sec / 60).toString().padStart(2, '0');
@@ -454,7 +455,10 @@ export const clipsUI = {
 
       let processedUrl = url;
       if (processedUrl && processedUrl.match(/tiktok\.com|youtube\.com|youtu\.be/i)) {
-        processedUrl = `http://localhost:3000/api/audio?url=${encodeURIComponent(processedUrl)}`;
+        try {
+          const base = await getBackendBaseUrl();
+          if (base) processedUrl = `${base}/api/audio?url=${encodeURIComponent(processedUrl)}`;
+        } catch {}
       }
 
       const ctx = new (window.AudioContext || window.webkitAudioContext)();

@@ -1,3 +1,5 @@
+import { getBackendBaseUrlSync } from './config.js';
+
 const FFMPEG_ESM_URL    = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js';
 const FFMPEG_WORKER_URL = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/worker.js';
 const CORE_JS_URL       = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js';
@@ -367,7 +369,8 @@ export class VideoProcessor {
 
             let processedUrl = url;
             if (processedUrl && processedUrl.match(/tiktok\.com|youtube\.com|youtu\.be/i)) {
-              processedUrl = `http://localhost:3000/api/audio?url=${encodeURIComponent(processedUrl)}`;
+              const b = getBackendBaseUrlSync();
+              if (b) processedUrl = `${b}/api/audio?url=${encodeURIComponent(processedUrl)}`;
             }
 
             const bGain = audioCtx.createGain();

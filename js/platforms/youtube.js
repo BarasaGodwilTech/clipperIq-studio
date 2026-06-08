@@ -13,7 +13,7 @@ export class YouTubeAPI {
   async getConfig() {
     const clientId = await db.getSetting('google_client_id');
     const clientSecret = await db.getSetting('google_client_secret');
-    if (!clientId) throw new Error('Google Client ID not configured. Please set it in Settings → API Keys or ask your administrator.');
+    if (!clientId) throw new Error('Google Client ID not configured. Go to Settings → API Keys.');
     return { clientId, clientSecret };
   }
 
@@ -107,7 +107,7 @@ export class YouTubeAPI {
 
   async getValidToken() {
     const token = await authStore.getToken('youtube');
-    if (!token) throw new Error('YouTube not connected. Please connect your account in the Accounts tab.');
+    if (!token) throw new Error('YouTube not connected');
     if (Date.now() > token.expires_at - 60000) {
       await this.refreshToken();
       return authStore.getToken('youtube');

@@ -1,6 +1,7 @@
 import { OAuthHelper } from './oauthHelper.js';
 import { authStore } from '../storage/authStore.js';
 import { db } from '../storage/db.js';
+import { getBackendBaseUrlSync } from '../core/config.js';
 
 const FB_AUTH_URL = 'https://www.facebook.com/v18.0/dialog/oauth';
 const FB_TOKEN_URL = 'https://graph.facebook.com/v18.0/oauth/access_token';
@@ -10,7 +11,7 @@ export class InstagramAPI {
   async getConfig() {
     const appId = await db.getSetting('facebook_app_id');
     const appSecret = await db.getSetting('facebook_app_secret');
-    if (!appId) throw new Error('Facebook App ID not configured. Please set it in Settings → API Keys or ask your administrator.');
+    if (!appId) throw new Error('Facebook App ID not configured. Go to Settings → API Keys.');
     return { appId, appSecret };
   }
 
@@ -101,10 +102,10 @@ export class InstagramAPI {
 
   async getValidCredentials() {
     const token = await authStore.getToken('instagram');
-    if (!token) throw new Error('Instagram not connected. Please connect your account in the Accounts tab.');
+    if (!token) throw new Error('Instagram not connected');
     const igUserId = await db.getSetting('instagram_user_id');
     const pageToken = await db.getSetting('instagram_page_access_token');
-    if (!igUserId) throw new Error('Instagram user ID not found. Please reconnect your account.');
+    if (!igUserId) throw new Error('Instagram user ID not found');
     return { accessToken: pageToken || token.access_token, igUserId };
   }
 
@@ -115,7 +116,7 @@ export class InstagramAPI {
     // Obtain a fetchable URL for Instagram: prefer provided URL, otherwise upload to backend relay
     let remoteUrl = options.videoUrl || null;
     if (!remoteUrl) {
-      const base = (await db.getSetting('backend_base_url')) || 'http://localhost:3000';
+      const base = (await db.getSetting('backend_base_url')) || getBackendBaseUrlSync();
       const filename = `reel-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`;
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
