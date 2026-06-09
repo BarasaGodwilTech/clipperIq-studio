@@ -24,6 +24,20 @@ app.use((req, res, next) => {
   next();
 });
 
+// Reusable fetch with timeout helper for outbound API calls
+async function fetchWithTimeout(url, options = {}, timeout = 15000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return res;
+  } catch (e) {
+    clearTimeout(id);
+    throw e;
+  }
+}
+
 app.use(express.json({ limit: '5mb' }));
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -157,20 +171,6 @@ app.post('/api/tiktok/init', async (req, res) => {
   try {
     const auth = req.header('Authorization');
     if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
-    // Add timeout and retry for TikTok API calls
-    const fetchWithTimeout = async (url, options, timeout = 15000) => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-      try {
-        const response = await fetch(url, { ...options, signal: controller.signal });
-        clearTimeout(timeoutId);
-        return response;
-      } catch (err) {
-        clearTimeout(timeoutId);
-        throw err;
-      }
-    };
-
     const r = await fetchWithTimeout('https://open.tiktokapis.com/v2/post/publish/inbox/video/init/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=UTF-8', Authorization: auth },
@@ -216,7 +216,7 @@ app.post('/api/tiktok/token', async (req, res) => {
       }
       body.set('refresh_token', refresh_token);
     }
-    const r = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
+    const r = await fetchWithTimeout('https://open.tiktokapis.com/v2/oauth/token/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
@@ -239,7 +239,7 @@ app.post('/api/tiktok/revoke', async (req, res) => {
       token,
       token_type,
     });
-    const r = await fetch('https://open.tiktokapis.com/v2/oauth/revoke/', {
+    const r = await fetchWithTimeout('https://open.tiktokapis.com/v2/oauth/revoke/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
@@ -256,7 +256,7 @@ app.post('/api/tiktok/status', async (req, res) => {
   try {
     const auth = req.header('Authorization');
     if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
-    const r = await fetch('https://open.tiktokapis.com/v2/post/publish/status/fetch/', {
+    const r = await fetchWithTimeout('https://open.tiktokapis.com/v2/post/publish/status/fetch/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=UTF-8', Authorization: auth },
       body: JSON.stringify(req.body || {}),
@@ -274,7 +274,7 @@ app.get('/api/tiktok/user', async (req, res) => {
     const auth = req.header('Authorization');
     if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
     const fields = req.query.fields || 'open_id,union_id,avatar_url,display_name,username,follower_count';
-    const r = await fetch(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(fields)}`, {
+    const r = await fetchWithTimeout(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(fields)}`, {
       headers: { Authorization: auth },
     });
     const data = await r.json().catch(() => ({}));
@@ -285,6 +285,9 @@ app.get('/api/tiktok/user', async (req, res) => {
   }
 });
 
+// Explicit preflight handler for upload route
+app.options('/api/tiktok/upload', cors(corsOptions));
+
 app.post(
   '/api/tiktok/upload',
   express.raw({ type: 'video/*', limit: '500mb' }),
@@ -293,23 +296,25 @@ app.post(
       const uploadUrl = req.query.upload_url;
       if (!uploadUrl) return res.status(400).json({ error: 'Missing upload_url' });
       const contentRange = req.header('Content-Range');
-      const controller = new AbortController();
-      const to = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minutes
-      const r = await fetch(uploadUrl, {
+      // Derive content length from raw body when available to reduce proxy 503s
+      const contentLength = Buffer.isBuffer(req.body) ? req.body.length : undefined;
+      const r = await fetchWithTimeout(uploadUrl, {
         method: 'PUT',
         headers: {
           'Content-Range': contentRange || '',
           'Content-Type': 'video/mp4',
+          ...(contentLength != null ? { 'Content-Length': String(contentLength) } : {}),
+          'Connection': 'keep-alive',
+          'Accept': '*/*',
         },
         body: req.body,
-        signal: controller.signal,
-      });
-      clearTimeout(to);
+      }, 5 * 60 * 1000);
       const txt = await r.text().catch(() => '');
       res.status(r.status).send(txt);
     } catch (e) {
       console.error('[Backend] TikTok upload error:', e);
-      res.status(500).json({ error: 'TikTok upload failed' });
+      // Use 502 to indicate upstream failure but keep CORS visible to browser
+      res.status(502).json({ error: 'TikTok upload failed' });
     }
   }
 );

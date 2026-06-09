@@ -154,8 +154,9 @@ export const queueUI = {
 
   async retry(id) {
     notify.info('Retrying post...');
-    // Fire-and-forget to immediately reflect RUNNING state and progress in UI
-    cronEngine.forceExecute(id).catch(() => notify.error('Retry failed'));
+    const btn = document.activeElement && document.activeElement.tagName === 'BUTTON' ? document.activeElement : null;
+    if (btn) btn.disabled = true;
+    cronEngine.forceExecute(id).catch(() => notify.error('Retry failed')).finally(() => { if (btn) btn.disabled = false; });
     // Quick refresh now, and again shortly to pick up RUNNING status
     this.refresh();
     setTimeout(() => this.refresh(), 600);
@@ -164,19 +165,20 @@ export const queueUI = {
   async postNow(id) {
     if (this._shouldConfirm(`postnow:${id}`, 'Tap again to post immediately')) return;
     notify.info('Posting now...');
-    cronEngine.forceExecute(id).catch(() => notify.error('Post failed'));
+    const btn = document.activeElement && document.activeElement.tagName === 'BUTTON' ? document.activeElement : null;
+    if (btn) btn.disabled = true;
+    cronEngine.forceExecute(id).catch(() => notify.error('Post failed')).finally(() => { if (btn) btn.disabled = false; });
     this.refresh();
     setTimeout(() => this.refresh(), 600);
   },
 
   async stop(id) {
     if (this._shouldConfirm(`stop:${id}`, 'Tap again to stop this job')) return;
-    try {
-      await cronEngine.cancel(id);
-      notify.info('Posting stopped');
-    } catch (err) {
-      notify.error('Failed to stop');
-    }
+    const btn = document.activeElement && document.activeElement.tagName === 'BUTTON' ? document.activeElement : null;
+    if (btn) btn.disabled = true;
+    try { await cronEngine.cancel(id); notify.info('Posting stopped'); }
+    catch { notify.error('Failed to stop'); }
+    finally { if (btn) btn.disabled = false; }
     this.refresh();
   },
 
