@@ -392,6 +392,8 @@ class ClipperIQApp {
       if (!clip) { notify.error('Clip not found'); return; }
 
       try {
+        const submitBtn = form.querySelector('button[type="submit"], .btn.btn-primary');
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Scheduling…'; }
         const privacy = document.getElementById('schedulePrivacy')?.value || 'public';
         if (platform === 'All') {
           const candidates = [
@@ -428,7 +430,11 @@ class ClipperIQApp {
           badge.textContent = count;
         }
       } catch (err) {
-        notify.error(`Failed to schedule: ${err.message}`);
+        if (/already scheduled/i.test(err?.message || '')) notify.warn(err.message);
+        else notify.error(`Failed to schedule: ${err.message}`);
+      } finally {
+        const submitBtn = form.querySelector('button[type="submit"], .btn.btn-primary');
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Schedule'; }
       }
     });
   }
@@ -555,6 +561,8 @@ class ClipperIQApp {
   }
 
   async scheduleFromForm() {
+    if (this._schedulingForm) return; // guard double clicks
+    this._schedulingForm = true;
     const clipId = parseInt(document.getElementById('schedClipSelect')?.value);
     const platform = document.getElementById('schedPlatformSelect')?.value;
     const caption = document.getElementById('schedCaption')?.value || '';
@@ -596,7 +604,10 @@ class ClipperIQApp {
       document.getElementById('schedCaption').value = '';
       await this._updateQueueBadge();
     } catch (err) {
-      notify.error(`Schedule failed: ${err.message}`);
+      if (/already scheduled/i.test(err?.message || '')) notify.warn(err.message);
+      else notify.error(`Schedule failed: ${err.message}`);
+    } finally {
+      this._schedulingForm = false;
     }
   }
 

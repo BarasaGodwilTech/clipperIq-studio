@@ -137,26 +137,20 @@ export const queueUI = {
   },
 
   async retry(id) {
-    try {
-      notify.info('Retrying post...');
-      await cronEngine.forceExecute(id);
-      notify.success('Post succeeded!');
-    } catch (err) {
-      notify.error(`Retry failed: ${err.message}`);
-    }
+    notify.info('Retrying post...');
+    // Fire-and-forget to immediately reflect RUNNING state and progress in UI
+    cronEngine.forceExecute(id).catch(err => notify.error(`Retry failed: ${err.message}`));
+    // Quick refresh now, and again shortly to pick up RUNNING status
     this.refresh();
+    setTimeout(() => this.refresh(), 600);
   },
 
   async postNow(id) {
     if (!confirm('Post this immediately?')) return;
-    try {
-      notify.info('Posting now...');
-      await cronEngine.forceExecute(id);
-      notify.success('Posted successfully!');
-    } catch (err) {
-      notify.error(`Post failed: ${err.message}`);
-    }
+    notify.info('Posting now...');
+    cronEngine.forceExecute(id).catch(err => notify.error(`Post failed: ${err.message}`));
     this.refresh();
+    setTimeout(() => this.refresh(), 600);
   },
 
   async stop(id) {

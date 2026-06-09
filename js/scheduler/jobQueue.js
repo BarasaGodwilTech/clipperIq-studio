@@ -10,12 +10,31 @@ export const JOB_STATUS = {
 
 export const jobQueue = {
   async add(jobData) {
+    // Normalize time and validate inputs
+    const when = new Date(jobData.scheduledAt);
+    if (isNaN(when.getTime())) throw new Error('Invalid schedule time');
+
+    // Duplicate guard: avoid scheduling the same clip+platform at ~the same time
+    // Treat within 60s as duplicates to catch double-clicks and quick repeats
+    const all = await db.getAll(STORES.SCHEDULED_POSTS);
+    const targetTs = when.getTime();
+    const platformName = String(jobData.platform || '').trim();
+    const dup = all.some(p =>
+      p && p.clipId === jobData.clipId &&
+      String(p.platform || '').trim().toLowerCase() === platformName.toLowerCase() &&
+      (p.status === JOB_STATUS.SCHEDULED || p.status === JOB_STATUS.RUNNING) &&
+      Math.abs(new Date(p.scheduledAt).getTime() - targetTs) <= 60000
+    );
+    if (dup) {
+      throw new Error(`Already scheduled for ${platformName} around this time`);
+    }
+
     const job = {
       clipId: jobData.clipId,
       blobId: jobData.blobId,
       platform: jobData.platform,
       caption: jobData.caption || '',
-      scheduledAt: new Date(jobData.scheduledAt).toISOString(),
+      scheduledAt: when.toISOString(),
       status: JOB_STATUS.SCHEDULED,
       retryCount: 0,
       maxRetries: 3,
