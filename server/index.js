@@ -203,7 +203,7 @@ app.post('/api/tiktok/init', async (req, res) => {
     const auth = req.header('Authorization');
     if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
     console.log('[Backend] TikTok init request:', JSON.stringify(req.body || {}).slice(0, 500));
-    const r = await fetchWithTimeout('https://open.tiktokapis.com/v2/post/publish/inbox/video/init/', {
+    const r = await fetchWithTimeout('https://open.tiktokapis.com/v2/post/publish/video/init/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=UTF-8', Authorization: auth },
       body: JSON.stringify(req.body || {}),
