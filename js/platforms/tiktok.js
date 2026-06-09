@@ -213,11 +213,10 @@ export class TikTokAPI {
     };
     const privacyLevel = privacyMap[privacy] || 'PUBLIC_TO_EVERYONE';
 
-    // Use small sequential chunks (quantized to TikTok-accepted sizes) to improve reliability
-    const ONE_MIB = 1024 * 1024;
-    const FOUR_MIB = 4 * ONE_MIB;
-    // TikTok expects chunk_size to be a specific size boundary; prefer 4 MiB, else 1 MiB for small videos
-    const CHUNK_SIZE = videoBlob.size >= FOUR_MIB ? FOUR_MIB : (videoBlob.size >= ONE_MIB ? ONE_MIB : videoBlob.size);
+    // Use small sequential chunks to improve reliability. TikTok validates chunk_size strictly.
+    // Rule: use 4 MiB when possible; if the video is smaller than 4 MiB, send a single chunk (video size).
+    const FOUR_MIB = 4 * 1024 * 1024;
+    const CHUNK_SIZE = videoBlob.size < FOUR_MIB ? videoBlob.size : FOUR_MIB;
     const totalChunks = Math.max(1, Math.ceil(videoBlob.size / CHUNK_SIZE));
 
     const base = await getBackendBaseUrl();
