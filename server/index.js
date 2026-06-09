@@ -241,11 +241,18 @@ app.get('/api/proxy-image', async (req, res) => {
     let u;
     try { u = new URL(raw); } catch { return res.status(400).send('Invalid url'); }
     const host = u.hostname || '';
-    // Restrict to TikTok CDN domains
-    if (!/tiktokcdn\.com$/i.test(host)) {
+    // Restrict to TikTok CDN domains (common variants)
+    if (!/(?:^|\.)tiktokcdn(?:-us)?\.com$/i.test(host)) {
       return res.status(403).send('Domain not allowed');
     }
-    const r = await fetch(u.toString(), { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const r = await fetch(u.toString(), {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/*,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.8',
+        'Referer': 'https://www.tiktok.com/',
+      }
+    });
     const ct = r.headers.get('content-type') || 'image/*';
     const ab = await r.arrayBuffer();
     res.setHeader('Content-Type', ct);
