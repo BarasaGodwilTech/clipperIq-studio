@@ -11,6 +11,7 @@ import { youtubeAPI } from './platforms/youtube.js';
 import { cronEngine } from './scheduler/cronEngine.js';
 import { jobQueue } from './scheduler/jobQueue.js';
 import { syncApiKeysFromFirebase } from './firebase.js';
+import { getBackendBaseUrl } from './core/config.js';
 
 const PAGE_TITLES = {
   login: 'Sign In',
@@ -69,10 +70,19 @@ class ClipperIQApp {
           });
         } catch {}
 
+        let avatar = info.avatar_url || '';
+        try {
+          if (avatar) {
+            const base = await getBackendBaseUrl();
+            if (base && !avatar.startsWith(base + '/api/proxy-image')) {
+              avatar = `${base}/api/proxy-image?url=${encodeURIComponent(avatar)}`;
+            }
+          }
+        } catch {}
         rows.push({
           platform: 'TikTok',
           color: 'var(--tiktok)',
-          avatar: info.avatar_url || '',
+          avatar,
           handle: info.username ? '@' + info.username : (info.display_name || 'Connected'),
           followers: info.follower_count,
           recent,
