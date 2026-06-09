@@ -28,12 +28,16 @@ export const retryHandler = {
 
   getRetryDelay(attempt, error) {
     const msg = error?.message?.toLowerCase() || '';
+    console.log('[RetryHandler] Checking error for special backoff:', msg);
     // Special-case TikTok spam risk: 10-minute backoff
     if (/too_many_pending_share|spam_risk/.test(msg)) {
+      console.log('[RetryHandler] Applying 10-minute backoff for TikTok spam risk');
       return 10 * 60 * 1000; // 10 minutes
     }
     // Default exponential backoff with jitter
-    return BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 5000;
+    const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 5000;
+    console.log('[RetryHandler] Using default exponential backoff:', delay);
+    return delay;
   },
 
   async withRetry(fn, jobId, onRetry = null) {

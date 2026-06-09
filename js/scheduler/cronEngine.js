@@ -83,14 +83,27 @@ export class CronEngine {
         const allClips = await db.getAll(STORES.CLIPS);
         const earlier = allClips.filter(c => c.uploadId === clip.uploadId && c.partNumber != null && c.partNumber < clip.partNumber);
         if (earlier.length > 0) {
+          // Check if earlier parts have been posted for this platform
           const hist = await db.getAll(STORES.POSTED_HISTORY);
           const postedIds = new Set(hist.filter(h => h.platform === post.platform).map(h => h.clipId));
-          const pendingEarlier = earlier.filter(c => !postedIds.has(c.id));
+          // Check all scheduled posts for this platform (including running, scheduled, and retryable failed)
+          const scheduledPosts = await db.getAll(STORES.SCHEDULED_POSTS);
+          const pendingIds = new Set(
+            scheduledPosts
+              .filter(p => p.platform === post.platform && (
+                p.status === 'scheduled' ||
+                p.status === 'running' ||
+                (p.status === 'failed' && (p.retryCount || 0) < (p.maxRetries || 3))
+              ))
+              .map(p => p.clipId)
+          );
+          // Part 2 is blocked if any earlier part is neither posted nor permanently failed
+          const pendingEarlier = earlier.filter(c => !postedIds.has(c.id) && pendingIds.has(c.id));
           if (pendingEarlier.length > 0) {
             const deferMs = 2 * 60 * 1000;
             const next = new Date(Date.now() + deferMs);
             await jobQueue.reschedule(post.id, next);
-            console.warn(`[CronEngine] Deferred job ${post.id} (Clip #${post.clipId}) until earlier parts post`);
+            console.warn(`[CronEngine] Deferred job ${post.id} (Clip #${post.clipId}) until earlier parts post (blocked by: ${pendingEarlier.map(c => c.partNumber).join(', ')})`);
             return;
           }
         }
