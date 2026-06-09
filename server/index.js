@@ -157,7 +157,21 @@ app.post('/api/tiktok/init', async (req, res) => {
   try {
     const auth = req.header('Authorization');
     if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
-    const r = await fetch('https://open.tiktokapis.com/v2/post/publish/inbox/video/init/', {
+    // Add timeout and retry for TikTok API calls
+    const fetchWithTimeout = async (url, options, timeout = 15000) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(timeoutId);
+        return response;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
+      }
+    };
+
+    const r = await fetchWithTimeout('https://open.tiktokapis.com/v2/post/publish/inbox/video/init/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=UTF-8', Authorization: auth },
       body: JSON.stringify(req.body || {}),
