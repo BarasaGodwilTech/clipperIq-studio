@@ -213,9 +213,9 @@ export class TikTokAPI {
     };
     const privacyLevel = privacyMap[privacy] || 'PUBLIC_TO_EVERYONE';
 
-    // Use single-chunk upload per TikTok docs to avoid total_chunk_count mismatch
-    const CHUNK_SIZE = videoBlob.size;
-    const totalChunks = 1;
+    // Use small sequential chunks to improve tunnel reliability while preserving order
+    const CHUNK_SIZE = Math.max(1, Math.min(4 * 1024 * 1024, videoBlob.size)); // up to 4 MiB
+    const totalChunks = Math.max(1, Math.ceil(videoBlob.size / CHUNK_SIZE));
 
     const base = await getBackendBaseUrl();
     const initRes = await fetch(`${base}/api/tiktok/init`, {
@@ -295,29 +295,34 @@ export class TikTokAPI {
     });
 
     if (onProgress) onProgress(5);
-    // Single chunk
-    const start = 0;
-    const end = videoBlob.size;
-    const chunk = videoBlob.slice(start, end);
-    try {
-      await xhrUpload(start, end, chunk, 0);
-    } catch (e) {
-      // Fallback to fetch-based upload through backend if XHR stalls or errors
-      if (abortSignal?.aborted) throw e;
-      const res = await fetch(`${base}/api/tiktok/upload?upload_url=${encodeURIComponent(upload_url)}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'video/mp4',
-          'Content-Range': `bytes ${start}-${end - 1}/${videoBlob.size}`,
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: chunk,
-        signal: abortSignal || undefined,
-      });
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '');
-        throw new Error(`Upload failed (${res.status}): ${txt?.slice(0,120)}`);
+    // Chunked upload loop
+    let offset = 0;
+    let idx = 0;
+    while (offset < videoBlob.size) {
+      const end = Math.min(offset + CHUNK_SIZE, videoBlob.size);
+      const chunk = videoBlob.slice(offset, end);
+      try {
+        await xhrUpload(offset, end, chunk, idx);
+      } catch (e) {
+        if (abortSignal?.aborted) throw e;
+        const res = await fetch(`${base}/api/tiktok/upload?upload_url=${encodeURIComponent(upload_url)}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'video/mp4',
+            'Content-Range': `bytes ${offset}-${end - 1}/${videoBlob.size}`,
+            'ngrok-skip-browser-warning': 'true',
+          },
+          body: chunk,
+          signal: abortSignal || undefined,
+        });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(`Upload failed (${res.status}): ${txt?.slice(0,120)}`);
+        }
       }
+      offset = end;
+      idx += 1;
+      if (onProgress) onProgress(Math.min(90, Math.round((offset / videoBlob.size) * 90)));
     }
     if (onProgress) onProgress(90);
 

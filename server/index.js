@@ -317,7 +317,7 @@ app.post(
       const contentRange = req.header('Content-Range');
       // Derive content length from raw body when available to reduce proxy 503s
       const contentLength = Buffer.isBuffer(req.body) ? req.body.length : undefined;
-      const r = await fetchWithTimeout(uploadUrl, {
+      const r = await fetchWithRetry(uploadUrl, {
         method: 'PUT',
         headers: {
           'Content-Range': contentRange || '',
@@ -327,7 +327,7 @@ app.post(
           'Accept': '*/*',
         },
         body: req.body,
-      }, 5 * 60 * 1000);
+      }, 5 * 60 * 1000, 3, 800);
       const txt = await r.text().catch(() => '');
       res.status(r.status).send(txt);
     } catch (e) {
