@@ -221,11 +221,13 @@ input[type=range] { width: 100%; accent-color: var(--accent); background: transp
   display: none; position: fixed; inset: 0;
   background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
   z-index: 1000; align-items: center; justify-content: center;
+  padding: 20px;
 }
 .processing-modal.show { display: flex; }
 .processing-box {
   background: var(--bg2); border: 1px solid var(--border2);
-  border-radius: var(--radius-xl); padding: 40px; width: 440px; text-align: center;
+  border-radius: var(--radius-xl); padding: 40px; width: 440px; max-width: 100%;
+  text-align: center; max-height: 90vh; overflow-y: auto;
 }
 .proc-spinner {
   width: 56px; height: 56px; border: 3px solid var(--bg3);
@@ -243,11 +245,13 @@ input[type=range] { width: 100%; accent-color: var(--accent); background: transp
   display: none; position: fixed; inset: 0;
   background: rgba(0,0,0,0.8); backdrop-filter: blur(6px);
   z-index: 1001; align-items: center; justify-content: center;
+  padding: 20px;
 }
 .overlay-modal.show { display: flex; }
 .modal-box {
   background: var(--bg2); border: 1px solid var(--border2);
-  border-radius: var(--radius-xl); padding: 28px; width: 480px; max-width: 95vw;
+  border-radius: var(--radius-xl); padding: 28px; width: 480px; max-width: 100%;
+  max-height: 90vh; overflow-y: auto;
 }
 .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .modal-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; }
@@ -259,14 +263,18 @@ input[type=range] { width: 100%; accent-color: var(--accent); background: transp
   .video-thumb { width: 100%; aspect-ratio: 16/9; height: auto; }
   .range-row { flex-wrap: wrap; align-items: flex-start; }
   .range-val { order: -1; text-align: left; min-width: 0; }
-  .processing-box { width: min(420px, 90vw); padding: 32px 24px; }
+  .processing-box { width: 100%; padding: 32px 24px; }
+  .modal-box { width: 100%; padding: 24px; }
 }
 
 @media (max-width: 500px) {
   .clip-card { border-radius: var(--radius); }
   .clip-meta { padding: 10px; }
-  .modal-box { width: 95vw; padding: 24px; }
-  .processing-box { width: 92vw; padding: 28px 20px; }
+  .modal-box { padding: 20px; }
+  .processing-box { padding: 24px 20px; }
   .toggle-row { flex-wrap: wrap; gap: 12px; }
   .toggle-switch { margin-left: auto; }
+  .form-group { margin-bottom: 14px; }
+  .btn { width: 100%; justify-content: center; }
+  .btn-sm { width: auto; }
 }
