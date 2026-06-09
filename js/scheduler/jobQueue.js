@@ -35,6 +35,7 @@ export const jobQueue = {
       platform: jobData.platform,
       caption: jobData.caption || '',
       scheduledAt: when.toISOString(),
+      originalScheduledAt: when.toISOString(), // Preserve original schedule time
       status: JOB_STATUS.SCHEDULED,
       retryCount: 0,
       maxRetries: 3,
@@ -98,7 +99,14 @@ export const jobQueue = {
       progress: nextRetryAt ? 0 : (job.progress || 0),
     };
 
-    if (nextRetryAt) update.scheduledAt = nextRetryAt;
+    if (nextRetryAt) {
+      // Ensure retry time never jumps ahead of original scheduled time
+      // This preserves the order of scheduled posts
+      const originalTime = job.originalScheduledAt ? new Date(job.originalScheduledAt).getTime() : 0;
+      const retryTime = new Date(nextRetryAt).getTime();
+      const safeRetryTime = Math.max(originalTime, retryTime);
+      update.scheduledAt = new Date(safeRetryTime).toISOString();
+    }
     return db.put(STORES.SCHEDULED_POSTS, update);
   },
 
@@ -112,6 +120,7 @@ export const jobQueue = {
     return db.put(STORES.SCHEDULED_POSTS, {
       ...job,
       scheduledAt: new Date(newTime).toISOString(),
+      originalScheduledAt: job.originalScheduledAt || job.scheduledAt, // Preserve original schedule time
       status: JOB_STATUS.SCHEDULED,
       updatedAt: new Date().toISOString(),
     });
