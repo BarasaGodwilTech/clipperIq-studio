@@ -725,7 +725,7 @@ if ('serviceWorker' in navigator) {
   <div class="modal-box">
     <div class="modal-header">
       <span class="modal-title">Mix Audio</span>
-      <button class="modal-close" onclick="document.getElementById('audioMixModal').classList.remove('show')">✕</button>
+      <button class="modal-close" onclick="document.getElementById('audioMixModal').classList.remove('show');window.app?._unlockBodyScroll?.()">✕</button>
     </div>
     <div class="form-group">
       <label class="form-label" style="display:flex;align-items:center;gap:8px">
@@ -773,7 +773,7 @@ if ('serviceWorker' in navigator) {
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:10px">
       <button class="btn btn-ghost" onclick="window.clipsUI?.previewMix?.()">▶ Preview Mix</button>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" onclick="document.getElementById('audioMixModal').classList.remove('show')">Close</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('audioMixModal').classList.remove('show');window.app?._unlockBodyScroll?.()">Close</button>
         <button class="btn btn-primary" onclick="window.clipsUI?.saveMix?.()">Save</button>
       </div>
     </div>
@@ -785,7 +785,7 @@ if ('serviceWorker' in navigator) {
   <div class="modal-box">
     <div class="modal-header">
       <span class="modal-title">Schedule Clip</span>
-      <button class="modal-close" id="scheduleModalClose">✕</button>
+      <button class="modal-close" id="scheduleModalClose" onclick="document.getElementById('scheduleModal').classList.remove('show');window.app?._unlockBodyScroll?.()">✕</button>
     </div>
     <form id="scheduleForm">
       <div class="form-group">

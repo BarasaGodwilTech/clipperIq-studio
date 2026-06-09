@@ -246,12 +246,14 @@ input[type=range] { width: 100%; accent-color: var(--accent); background: transp
   background: rgba(0,0,0,0.8); backdrop-filter: blur(6px);
   z-index: 1001; align-items: center; justify-content: center;
   padding: 20px;
+  overflow-y: auto;
 }
 .overlay-modal.show { display: flex; }
 .modal-box {
   background: var(--bg2); border: 1px solid var(--border2);
   border-radius: var(--radius-xl); padding: 28px; width: 480px; max-width: 100%;
   max-height: 90vh; overflow-y: auto;
+  margin: auto;
 }
 .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .modal-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; }

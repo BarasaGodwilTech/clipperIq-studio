@@ -50,7 +50,7 @@ export const clipsUI = {
         <div class="modal-box" style="max-width:820px">
           <div class="modal-header">
             <span class="modal-title">Schedule Series</span>
-            <button class="modal-close" onclick="document.getElementById('seriesScheduleModal').classList.remove('show')">✕</button>
+            <button class="modal-close" onclick="document.getElementById('seriesScheduleModal').classList.remove('show');window.app?._unlockBodyScroll?.()">✕</button>
           </div>
           <div class="form-grid-2">
             <div class="form-group">
@@ -85,7 +85,7 @@ export const clipsUI = {
           </div>
           <div id="seriesPlanTable" style="max-height:300px;overflow:auto;margin-top:8px;border:1px solid var(--bg3);border-radius:var(--radius)"></div>
           <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-            <button class="btn btn-ghost" onclick="document.getElementById('seriesScheduleModal').classList.remove('show')">Close</button>
+            <button class="btn btn-ghost" onclick="document.getElementById('seriesScheduleModal').classList.remove('show');window.app?._unlockBodyScroll?.()">Close</button>
             <button class="btn btn-ghost" onclick="window.clipsUI.generateSeriesPlan()">Generate</button>
             <button class="btn btn-primary" onclick="window.clipsUI.confirmSeriesSchedule()">Confirm</button>
           </div>
@@ -112,6 +112,7 @@ export const clipsUI = {
 
     this._seriesPlan = { uploadId: pickId, parts };
     document.getElementById('seriesScheduleModal').classList.add('show');
+    window.app?._lockBodyScroll?.();
     this.generateSeriesPlan();
   },
 
@@ -202,6 +203,7 @@ export const clipsUI = {
       }
       notify.success(`Scheduled ${plan.items.length} part(s) on ${targets.join(', ')}`);
       document.getElementById('seriesScheduleModal')?.classList.remove('show');
+      window.app?._unlockBodyScroll?.();
       try { window.queueUI?.refresh?.(); } catch {}
     } catch (err) {
       notify.error(`Failed to schedule series: ${err.message}`);
@@ -297,12 +299,12 @@ export const clipsUI = {
         host.className = 'overlay-modal'; host.id = 'editClipModal';
         host.innerHTML = `
           <div class="modal-box" style="max-width:460px">
-            <div class="modal-header"><span class="modal-title">Edit Clip</span><button class="modal-close" onclick="document.getElementById('editClipModal').classList.remove('show')">✕</button></div>
+            <div class="modal-header"><span class="modal-title">Edit Clip</span><button class="modal-close" onclick="document.getElementById('editClipModal').classList.remove('show');window.app?._unlockBodyScroll?.()">✕</button></div>
             <div class="form-group"><label class="form-label">Start Time (seconds)</label><input class="form-input" id="editStart" type="number" step="0.1" min="0"></div>
             <div class="form-group"><label class="form-label">Duration (seconds)</label><input class="form-input" id="editDuration" type="number" step="0.1" min="1"></div>
             <div class="form-group"><label class="form-label">Overlay Start (seconds)</label><input class="form-input" id="editOverlayStart" type="number" step="0.1" min="0"></div>
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
-              <button class="btn btn-ghost" onclick="document.getElementById('editClipModal').classList.remove('show')">Close</button>
+              <button class="btn btn-ghost" onclick="document.getElementById('editClipModal').classList.remove('show');window.app?._unlockBodyScroll?.()">Close</button>
               <button class="btn btn-primary" onclick="window.clipsUI.saveEdit()">Save</button>
             </div>
           </div>`;
@@ -313,6 +315,7 @@ export const clipsUI = {
       document.getElementById('editOverlayStart').value = String((clip.overlayStartSec || 0).toFixed(1));
       document.getElementById('editClipModal').dataset.clipId = String(clipId);
       document.getElementById('editClipModal').classList.add('show');
+      window.app?._lockBodyScroll?.();
     } catch {}
   },
 
@@ -366,6 +369,7 @@ export const clipsUI = {
       await db.put(STORES.CLIPS, updated);
       const ix = this.clips.findIndex(c => c.id === clip.id); if (ix >= 0) this.clips[ix] = updated;
       document.getElementById('editClipModal')?.classList.remove('show');
+      window.app?._unlockBodyScroll?.();
       this.renderGrid();
       notify.success('Clip updated');
     } catch (e) {
@@ -430,6 +434,7 @@ export const clipsUI = {
         if (note) note.style.display = on ? 'block' : 'none';
       };
       document.getElementById('audioMixModal')?.classList.add('show');
+      window.app?._lockBodyScroll?.();
     } catch {}
   },
 
@@ -566,6 +571,7 @@ export const clipsUI = {
       try { window.dispatchEvent(new CustomEvent('clip:saved', { detail: updated })); } catch {}
       notify.success('Audio mix saved');
       document.getElementById('audioMixModal')?.classList.remove('show');
+      window.app?._unlockBodyScroll?.();
       this.renderGrid();
 
       // Apply scope

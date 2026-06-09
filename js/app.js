@@ -30,6 +30,21 @@ class ClipperIQApp {
     this.currentView = 'dashboard';
     this.compatOk = true;
     this._connecting = false;
+    this._modalOpenCount = 0;
+  }
+
+  _lockBodyScroll() {
+    this._modalOpenCount++;
+    if (this._modalOpenCount === 1) {
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  _unlockBodyScroll() {
+    this._modalOpenCount = Math.max(0, this._modalOpenCount - 1);
+    if (this._modalOpenCount === 0) {
+      document.body.style.overflow = '';
+    }
   }
 
   async _refreshPlatformInsights() {
@@ -374,8 +389,9 @@ class ClipperIQApp {
     const closeBtn = document.getElementById('scheduleModalClose');
     if (!modal || !form) return;
 
-    closeBtn?.addEventListener('click', () => modal.classList.remove('show'));
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('show'); });
+    const closeModal = () => { modal.classList.remove('show'); this._unlockBodyScroll(); };
+    closeBtn?.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -453,6 +469,7 @@ class ClipperIQApp {
     if (captionEl) captionEl.value = '';
 
     modal.classList.add('show');
+    this._lockBodyScroll();
     this.navigate('clips');
   }
 
@@ -461,8 +478,9 @@ class ClipperIQApp {
     const closeBtn = document.getElementById('previewModalClose');
     const video = document.getElementById('previewVideo');
     if (!modal) return;
-    closeBtn?.addEventListener('click', () => { modal.classList.remove('show'); video?.pause(); });
-    modal.addEventListener('click', (e) => { if (e.target === modal) { modal.classList.remove('show'); video?.pause(); } });
+    const closeModal = () => { modal.classList.remove('show'); video?.pause(); this._unlockBodyScroll(); };
+    closeBtn?.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
   }
 
   setupSettingsTabs() {

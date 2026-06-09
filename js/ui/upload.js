@@ -57,6 +57,7 @@ export const uploadUI = {
   runInBackground() {
     const modal = document.getElementById('procModal');
     if (modal) modal.classList.remove('show');
+    window.app?._unlockBodyScroll?.();
     const badge = document.getElementById('bgProcBadge');
     if (badge) badge.style.display = 'inline-flex';
   },
@@ -69,6 +70,7 @@ export const uploadUI = {
       // Clips already saved are persisted; we simply hide the modal either way.
       const modal = document.getElementById('procModal');
       if (modal) modal.classList.remove('show');
+      window.app?._unlockBodyScroll?.();
       const badge = document.getElementById('bgProcBadge');
       if (badge) badge.style.display = 'none';
     }
@@ -77,6 +79,7 @@ export const uploadUI = {
   reopenModal() {
     const modal = document.getElementById('procModal');
     if (modal) modal.classList.add('show');
+    window.app?._lockBodyScroll?.();
     const badge = document.getElementById('bgProcBadge');
     if (badge) badge.style.display = 'none';
   },
@@ -227,6 +230,7 @@ export const uploadUI = {
   showModal() {
     const modal = document.getElementById('procModal');
     if (modal) modal.classList.add('show');
+    window.app?._lockBodyScroll?.();
     this.setModalProgress(0, 'Initializing...');
     this.updateStepsList(['Save to storage', 'Load FFmpeg', 'Analyze audio', 'Detect scenes', 'Score segments', 'Extract clips'], 0);
   },
@@ -234,7 +238,10 @@ export const uploadUI = {
   hideModal() {
     const modal = document.getElementById('procModal');
     if (modal) {
-      setTimeout(() => modal.classList.remove('show'), 1200);
+      setTimeout(() => {
+        modal.classList.remove('show');
+        window.app?._unlockBodyScroll?.();
+      }, 1200);
     }
   },
 
