@@ -132,14 +132,9 @@ export class CronEngine {
       } else {
         const freshPost = await jobQueue.getById(post.id);
         if (freshPost && retryHandler.shouldRetry(freshPost) && retryHandler.isRetryableError(err)) {
-          // Special-case TikTok pending share spam risk: back off longer to allow inbox to drain
-          const msg = (err?.message || '').toLowerCase();
-          const isTtPendingSpam = /too_many_pending_share|spam_risk/.test(msg);
-          const nextTime = isTtPendingSpam
-            ? new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutes
-            : retryHandler.getNextRetryTime(freshPost.retryCount || 0);
+          const nextTime = retryHandler.getNextRetryTime(freshPost.retryCount || 0);
           await jobQueue.markFailed(post.id, err.message, nextTime);
-          console.log(`[CronEngine] Scheduled retry for job ${post.id} at ${nextTime}${isTtPendingSpam ? ' (TikTok pending-share backoff)' : ''}`);
+          console.log(`[CronEngine] Scheduled retry for job ${post.id} at ${nextTime}`);
         } else {
           await jobQueue.markFailed(post.id, err.message, null);
         }

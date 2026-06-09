@@ -26,6 +26,16 @@ export const retryHandler = {
     return !nonRetryable.some((phrase) => msg.includes(phrase));
   },
 
+  getRetryDelay(attempt, error) {
+    const msg = error?.message?.toLowerCase() || '';
+    // Special-case TikTok spam risk: 10-minute backoff
+    if (/too_many_pending_share|spam_risk/.test(msg)) {
+      return 10 * 60 * 1000; // 10 minutes
+    }
+    // Default exponential backoff with jitter
+    return BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 5000;
+  },
+
   async withRetry(fn, jobId, onRetry = null) {
     let lastError;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -34,7 +44,7 @@ export const retryHandler = {
       } catch (err) {
         lastError = err;
         if (attempt >= MAX_RETRIES || !this.isRetryableError(err)) break;
-        const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 5000;
+        const delay = this.getRetryDelay(attempt, err);
         if (onRetry) onRetry(attempt + 1, delay, err);
         await new Promise((r) => setTimeout(r, delay));
       }
