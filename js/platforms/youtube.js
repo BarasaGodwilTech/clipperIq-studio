@@ -1,6 +1,7 @@
 import { OAuthHelper } from './oauthHelper.js';
 import { authStore } from '../storage/authStore.js';
 import { db } from '../storage/db.js';
+import { getBackendBaseUrl } from '../core/config.js';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -128,43 +129,74 @@ export class YouTubeAPI {
 
   async uploadShort(videoBlob, metadata, onProgress = null) {
     const token = await this.getValidToken();
+    const base = await getBackendBaseUrl();
+    if (!base) throw new Error('Backend base URL not configured');
 
-    const videoMeta = {
-      snippet: {
+    // Initialize resumable session via backend to avoid CORS
+    const initRes = await fetch(`${base}/api/youtube/init`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+        Authorization: `Bearer ${token.access_token}`,
+      },
+      body: JSON.stringify({
         title: metadata.title || 'Short',
         description: metadata.description || '',
         tags: metadata.tags || [],
         categoryId: metadata.categoryId || '22',
-      },
-      status: {
-        privacyStatus: metadata.privacy || 'public',
-        selfDeclaredMadeForKids: false,
-      },
-    };
+        privacy: metadata.privacy || 'public',
+        size: videoBlob.size,
+      }),
+    });
 
-    const initRes = await fetch(
-      `${YT_UPLOAD_URL}?uploadType=resumable&part=snippet,status`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token.access_token}`,
-          'Content-Type': 'application/json; charset=UTF-8',
-          'X-Upload-Content-Type': 'video/mp4',
-          'X-Upload-Content-Length': String(videoBlob.size),
-        },
-        body: JSON.stringify(videoMeta),
-      }
-    );
-
-    if (!initRes.ok) {
-      const err = await initRes.json();
-      throw new Error(err.error?.message || 'YouTube upload init failed');
+    const initData = await initRes.json().catch(() => ({}));
+    if (!initRes.ok || !initData.sid) {
+      throw new Error(initData.error || 'YouTube upload init failed');
     }
 
-    const uploadUrl = initRes.headers.get('Location');
-    if (!uploadUrl) throw new Error('YouTube did not return upload URL');
+    return this.uploadChunkedViaProxy(base, initData.sid, videoBlob, onProgress);
+  }
 
-    return this.uploadChunked(uploadUrl, videoBlob, onProgress);
+  async uploadChunkedViaProxy(base, sid, videoBlob, onProgress = null) {
+    const totalSize = videoBlob.size;
+    let offset = 0;
+    const endpoint = `${base}/api/youtube/upload?sid=${encodeURIComponent(sid)}`;
+
+    while (offset < totalSize) {
+      const end = Math.min(offset + CHUNK_SIZE, totalSize);
+      const chunk = videoBlob.slice(offset, end);
+
+      const res = await fetch(endpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Range': `bytes ${offset}-${end - 1}/${totalSize}`,
+          'Content-Type': 'video/mp4',
+        },
+        body: chunk,
+      });
+
+      if (res.status === 308) {
+        const range = res.headers.get('Range');
+        if (range) {
+          offset = parseInt(range.split('-')[1]) + 1;
+        } else {
+          offset = end;
+        }
+        if (onProgress) onProgress(Math.round((offset / totalSize) * 100));
+        continue;
+      }
+
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (onProgress) onProgress(100);
+        const url = data.id ? `https://youtu.be/${data.id}` : null;
+        return { videoId: data.id, url, data };
+      }
+
+      let errMsg = 'YouTube chunk upload failed';
+      try { const err = await res.json(); errMsg = err.error?.message || errMsg; } catch {}
+      throw new Error(errMsg + `: ${res.status}`);
+    }
   }
 
   async uploadChunked(uploadUrl, videoBlob, onProgress = null) {

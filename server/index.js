@@ -30,6 +30,9 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '1y', immutable: true }));
+
+// In-memory map for YouTube resumable upload sessions: sid -> uploadUrl
+const ytSessions = new Map();
 app.post(
   '/upload/instagram-video',
   express.raw({ type: 'video/*', limit: '200mb' }),
@@ -58,6 +61,87 @@ app.post(
     }
   }
 );
+
+// YouTube: initialize resumable upload; client provides Authorization header (Bearer <yt_access_token>)
+app.post('/api/youtube/init', async (req, res) => {
+  try {
+    const auth = req.header('Authorization');
+    if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
+
+    const meta = req.body || {};
+    const payload = {
+      snippet: {
+        title: meta.title || 'Short',
+        description: meta.description || '',
+        tags: meta.tags || [],
+        categoryId: meta.categoryId || '22',
+      },
+      status: {
+        privacyStatus: meta.privacy || 'public',
+        selfDeclaredMadeForKids: false,
+      },
+    };
+
+    const r = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
+      method: 'POST',
+      headers: {
+        Authorization: auth,
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type': 'video/mp4',
+        ...(meta.size ? { 'X-Upload-Content-Length': String(meta.size) } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      return res.status(r.status).json({ error: err.error?.message || 'YouTube init failed' });
+    }
+    const uploadUrl = r.headers.get('Location');
+    if (!uploadUrl) return res.status(502).json({ error: 'YouTube did not return upload URL' });
+    const sid = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    ytSessions.set(sid, uploadUrl);
+    // expire after 30 minutes
+    setTimeout(() => ytSessions.delete(sid), 30 * 60 * 1000).unref?.();
+    res.json({ sid });
+  } catch (e) {
+    console.error('[Backend] YouTube init error:', e);
+    res.status(500).json({ error: 'YouTube init failed' });
+  }
+});
+
+// YouTube: upload chunk to the stored upload URL via proxy to bypass CORS
+app.put('/api/youtube/upload', express.raw({ type: 'video/*', limit: '1000mb' }), async (req, res) => {
+  try {
+    const sid = (req.query.sid || '').toString();
+    const uploadUrl = ytSessions.get(sid);
+    if (!sid || !uploadUrl) return res.status(400).json({ error: 'Invalid or expired session' });
+    const contentRange = req.header('Content-Range') || '';
+
+    const r = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Range': contentRange,
+        'Content-Type': req.header('Content-Type') || 'video/mp4',
+      },
+      body: req.body,
+    });
+
+    // Forward Range header for 308 intermediate responses
+    const fwdRange = r.headers.get('Range');
+    if (fwdRange) res.setHeader('Range', fwdRange);
+
+    const ct = r.headers.get('Content-Type') || '';
+    const txt = await r.text().catch(() => '');
+    if (ct.includes('application/json')) {
+      try { return res.status(r.status).json(JSON.parse(txt)); } catch {}
+    }
+    return res.status(r.status).send(txt);
+  } catch (e) {
+    console.error('[Backend] YouTube upload proxy error:', e);
+    res.status(500).json({ error: 'YouTube upload failed' });
+  }
+});
 
 app.post('/api/tiktok/init', async (req, res) => {
   try {
