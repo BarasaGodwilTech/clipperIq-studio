@@ -149,19 +149,28 @@ export class TikTokAPI {
     let token = await this.getValidToken();
     const base = await getBackendBaseUrl();
     if (!base) throw new Error('Backend base URL not configured');
-    const doFetch = async (accessToken) => fetch(`${base}/api/tiktok/user`, {
+    const doFetch = async (accessToken, fields) => fetch(`${base}/api/tiktok/user${fields ? `?fields=${encodeURIComponent(fields)}` : ''}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'ngrok-skip-browser-warning': 'true',
       },
     });
 
-    let res = await doFetch(token.access_token);
+    const FULL_FIELDS = 'open_id,union_id,avatar_url,display_name,username,follower_count';
+    const BASIC_FIELDS = 'open_id,avatar_url,display_name';
+
+    let res = await doFetch(token.access_token, FULL_FIELDS);
     if (res.status === 401) {
       try {
         await this.refreshToken();
         token = await authStore.getToken('tiktok');
-        res = await doFetch(token.access_token);
+        res = await doFetch(token.access_token, FULL_FIELDS);
+      } catch {}
+    }
+    // If still not authorized or forbidden due to missing scope, try basic fields (no username)
+    if (!res.ok && (res.status === 403 || res.status === 401)) {
+      try {
+        res = await doFetch(token.access_token, BASIC_FIELDS);
       } catch {}
     }
     const data = await res.json().catch(() => ({}));
