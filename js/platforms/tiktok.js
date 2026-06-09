@@ -95,7 +95,11 @@ export class TikTokAPI {
     };
 
     await authStore.setToken('tiktok', tokenData);
-    await this.fetchUserInfo();
+    try {
+      await this.fetchUserInfo();
+    } catch (e) {
+      try { await db.setSetting('tiktok_user', JSON.stringify({ display_name: 'Connected', open_id: tokenData.open_id })); } catch {}
+    }
     return tokenData;
   }
 
