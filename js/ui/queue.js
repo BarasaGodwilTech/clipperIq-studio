@@ -78,7 +78,8 @@ export const queueUI = {
       failed: `<button class="btn btn-primary btn-sm" onclick="window.queueUI.retry(${j.id})">Retry</button>
         <button class="btn btn-danger btn-sm" onclick="window.queueUI.remove(${j.id})">Remove</button>`,
       posted: `<button class="btn btn-ghost btn-sm" onclick="window.queueUI.remove(${j.id})">Remove</button>`,
-      cancelled: `<button class="btn btn-ghost btn-sm" onclick="window.queueUI.remove(${j.id})">Remove</button>`,
+      cancelled: `<button class="btn btn-primary btn-sm" onclick="window.queueUI.retry(${j.id})">Retry</button>
+        <button class="btn btn-danger btn-sm" onclick="window.queueUI.remove(${j.id})">Remove</button>`,
     }[j.status] || '';
 
     const errorTip = j.lastError ? ` title="${j.lastError.replace(/"/g, '&quot;')}"` : '';
