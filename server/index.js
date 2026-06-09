@@ -36,6 +36,7 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
     clearTimeout(id);
     throw e;
   }
+}
 
 // Simple retry wrapper for transient network failures
 async function fetchWithRetry(url, options = {}, timeout = 15000, attempts = 3, backoffMs = 1200) {
@@ -54,7 +55,6 @@ async function fetchWithRetry(url, options = {}, timeout = 15000, attempts = 3, 
     }
   }
   throw lastErr;
-}
 }
 
 app.use(express.json({ limit: '5mb' }));
