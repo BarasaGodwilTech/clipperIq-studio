@@ -73,6 +73,8 @@ export const queueUI = {
         <button class="btn btn-ghost btn-sm" onclick="window.queueUI.reschedule(${j.id})">Edit</button>
         <button class="btn btn-primary btn-sm" onclick="window.queueUI.postNow(${j.id})" title="Post immediately">▶</button>
         <button class="btn btn-danger btn-sm" onclick="window.queueUI.cancel(${j.id})">✕</button>`,
+      running: `
+        <button class="btn btn-warning btn-sm" onclick="window.queueUI.stop(${j.id})" title="Stop posting">■ Stop</button>`,
       failed: `<button class="btn btn-primary btn-sm" onclick="window.queueUI.retry(${j.id})">Retry</button>
         <button class="btn btn-danger btn-sm" onclick="window.queueUI.remove(${j.id})">Remove</button>`,
       posted: `<button class="btn btn-ghost btn-sm" onclick="window.queueUI.remove(${j.id})">Remove</button>`,
@@ -152,6 +154,17 @@ export const queueUI = {
       notify.success('Posted successfully!');
     } catch (err) {
       notify.error(`Post failed: ${err.message}`);
+    }
+    this.refresh();
+  },
+
+  async stop(id) {
+    if (!confirm('Stop this posting job?')) return;
+    try {
+      await cronEngine.cancel(id);
+      notify.info('Posting stopped');
+    } catch (err) {
+      notify.error(`Failed to stop: ${err.message}`);
     }
     this.refresh();
   },

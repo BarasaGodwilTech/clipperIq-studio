@@ -10,13 +10,19 @@ const TIKTOK_VIDEO_INIT_URL = 'https://open.tiktokapis.com/v2/post/publish/inbox
 const TIKTOK_VIDEO_STATUS_URL = 'https://open.tiktokapis.com/v2/post/publish/status/fetch/';
 const TIKTOK_USER_URL = 'https://open.tiktokapis.com/v2/user/info/';
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 120000) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 120000, extSignal = null) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => controller.abort();
   try {
+    if (extSignal) {
+      if (extSignal.aborted) controller.abort();
+      else extSignal.addEventListener('abort', onAbort, { once: true });
+    }
     return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(id);
+    if (extSignal) try { extSignal.removeEventListener('abort', onAbort); } catch {}
   }
 }
 
@@ -185,7 +191,7 @@ export class TikTokAPI {
     return data.data?.user;
   }
 
-  async publishVideo(videoBlob, caption, options = {}, onProgress = null) {
+  async publishVideo(videoBlob, caption, options = {}, onProgress = null, abortSignal = null) {
     const token = await this.getValidToken();
     const { privacy = 'PUBLIC_TO_EVERYONE', allowComments = true, allowDuet = false } = options;
 
@@ -199,8 +205,9 @@ export class TikTokAPI {
     };
     const privacyLevel = privacyMap[privacy] || 'PUBLIC_TO_EVERYONE';
 
-    const CHUNK_SIZE = 5 * 1024 * 1024;
-    const totalChunks = Math.max(1, Math.ceil(videoBlob.size / CHUNK_SIZE));
+    // Use single-chunk upload per TikTok docs to avoid total_chunk_count mismatch
+    const CHUNK_SIZE = videoBlob.size;
+    const totalChunks = 1;
 
     const base = await getBackendBaseUrl();
     const initRes = await fetch(`${base}/api/tiktok/init`, {
@@ -210,6 +217,7 @@ export class TikTokAPI {
         'Content-Type': 'application/json; charset=UTF-8',
         'ngrok-skip-browser-warning': 'true',
       },
+      signal: abortSignal || undefined,
       body: JSON.stringify({
         post_info: {
           title: caption.slice(0, 150),
@@ -247,6 +255,9 @@ export class TikTokAPI {
       xhr.setRequestHeader('Content-Type', 'video/mp4');
       xhr.setRequestHeader('Content-Range', `bytes ${start}-${end - 1}/${videoBlob.size}`);
       xhr.setRequestHeader('ngrok-skip-browser-warning', 'true');
+      let aborted = false;
+      const aborter = () => { aborted = true; try { xhr.abort(); } catch {} };
+      if (abortSignal) abortSignal.addEventListener('abort', aborter, { once: true });
       xhr.upload.onprogress = (e) => {
         if (!onProgress || !e.lengthComputable) return;
         const sentSoFar = Math.min(end, start + e.loaded);
@@ -257,26 +268,33 @@ export class TikTokAPI {
         if (xhr.status >= 200 && xhr.status < 300) resolve();
         else reject(new Error(`Upload chunk failed: ${xhr.status}`));
       };
-      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.onerror = () => {
+        if (aborted) {
+          const err = new DOMException('Aborted', 'AbortError');
+          return reject(err);
+        }
+        reject(new Error('Network error during upload'));
+      };
       xhr.send(chunk);
+      // Cleanup
+      xhr.onloadend = () => { if (abortSignal) try { abortSignal.removeEventListener('abort', aborter); } catch {} };
     });
 
     if (onProgress) onProgress(5);
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, videoBlob.size);
-      const chunk = videoBlob.slice(start, end);
-      await xhrUpload(start, end, chunk, i);
-      if (onProgress) onProgress(Math.round(((i + 1) / totalChunks) * 90));
-    }
+    // Single chunk
+    const start = 0;
+    const end = videoBlob.size;
+    const chunk = videoBlob.slice(start, end);
+    await xhrUpload(start, end, chunk, 0);
+    if (onProgress) onProgress(90);
 
     if (onProgress) onProgress(95);
-    const res = await this.pollPublishStatus(token.access_token, publish_id);
+    const res = await this.pollPublishStatus(token.access_token, publish_id, 40, abortSignal);
     if (onProgress) onProgress(100);
     return res;
   }
 
-  async pollPublishStatus(accessToken, publishId, maxAttempts = 40) {
+  async pollPublishStatus(accessToken, publishId, maxAttempts = 40, abortSignal = null) {
     const start = Date.now();
     const budgetMs = 300000;
     for (let i = 0; i < maxAttempts; i++) {
@@ -291,7 +309,7 @@ export class TikTokAPI {
           'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({ publish_id: publishId }),
-      }, 15000);
+      }, 15000, abortSignal);
       if (res.status === 401 || res.status === 403) {
         throw new Error('Unauthorized: TikTok status');
       }

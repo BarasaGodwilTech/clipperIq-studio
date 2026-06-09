@@ -13,6 +13,7 @@ export class CronEngine {
     this.onJobComplete = null;
     this.onJobFailed = null;
     this.onTick = null;
+    this.jobAbortControllers = new Map();
   }
 
   registerPlatform(name, api) {
@@ -89,6 +90,8 @@ export class CronEngine {
     } catch (e) {
       console.warn('[CronEngine] Part-order check failed, proceeding:', e?.message || e);
     }
+    const controller = new AbortController();
+    this.jobAbortControllers.set(post.id, controller);
     await jobQueue.markRunning(post.id);
 
     try {
@@ -104,7 +107,7 @@ export class CronEngine {
       ]);
 
       const result = await retryHandler.withRetry(
-        () => withTimeout(this._publishToplatform(api, post.platform, videoBlob, post), 7 * 60 * 1000),
+        () => withTimeout(this._publishToplatform(api, post.platform, videoBlob, post, controller.signal), 7 * 60 * 1000),
         post.id,
         (attempt, delay, err) => {
           console.warn(`[CronEngine] Retry ${attempt} for job ${post.id} in ${delay}ms:`, err.message);
@@ -116,24 +119,29 @@ export class CronEngine {
       if (this.onJobComplete) this.onJobComplete(post, result);
     } catch (err) {
       console.error(`[CronEngine] Post ${post.id} failed:`, err.message);
-
-      const freshPost = await jobQueue.getById(post.id);
-      if (freshPost && retryHandler.shouldRetry(freshPost) && retryHandler.isRetryableError(err)) {
-        const nextTime = retryHandler.getNextRetryTime(freshPost.retryCount || 0);
-        await jobQueue.markFailed(post.id, err.message, nextTime);
-        console.log(`[CronEngine] Scheduled retry for job ${post.id} at ${nextTime}`);
+      if (err.name === 'AbortError' || /aborted|cancelled/i.test(err.message || '')) {
+        await jobQueue.cancel(post.id);
       } else {
-        await jobQueue.markFailed(post.id, err.message, null);
+        const freshPost = await jobQueue.getById(post.id);
+        if (freshPost && retryHandler.shouldRetry(freshPost) && retryHandler.isRetryableError(err)) {
+          const nextTime = retryHandler.getNextRetryTime(freshPost.retryCount || 0);
+          await jobQueue.markFailed(post.id, err.message, nextTime);
+          console.log(`[CronEngine] Scheduled retry for job ${post.id} at ${nextTime}`);
+        } else {
+          await jobQueue.markFailed(post.id, err.message, null);
+        }
       }
 
       if (this.onJobFailed) this.onJobFailed(post, err);
+    } finally {
+      this.jobAbortControllers.delete(post.id);
     }
   }
 
-  async _publishToplatform(api, platform, videoBlob, post) {
+  async _publishToplatform(api, platform, videoBlob, post, abortSignal) {
     const p = platform.toLowerCase();
     if (p === 'tiktok') {
-      return api.publishVideo(videoBlob, post.caption, post.options, (pct) => jobQueue.setProgress(post.id, pct));
+      return api.publishVideo(videoBlob, post.caption, post.options, (pct) => jobQueue.setProgress(post.id, pct), abortSignal);
     }
     if (p === 'instagram') {
       return api.publishReel(videoBlob, post.caption, post.options, (pct) => jobQueue.setProgress(post.id, pct));
@@ -153,6 +161,16 @@ export class CronEngine {
     const post = await jobQueue.getById(jobId);
     if (!post) throw new Error(`Job ${jobId} not found`);
     return this.executePost(post);
+  }
+
+  async cancel(jobId) {
+    const ctrl = this.jobAbortControllers.get(jobId);
+    if (ctrl) {
+      ctrl.abort();
+    } else {
+      // If not currently running, mark as cancelled directly
+      await jobQueue.cancel(jobId);
+    }
   }
 }
 
