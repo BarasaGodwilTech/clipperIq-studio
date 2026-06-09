@@ -18,6 +18,12 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
+// Help pages using COEP embed cross-origin images from this backend
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+});
+
 app.use(express.json({ limit: '5mb' }));
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -224,6 +230,31 @@ app.get('/api/audio', (req, res) => {
   } catch (err) {
     console.error('[Backend] Setup error:', err);
     if (!res.headersSent) res.status(500).send('Failed to process URL');
+  }
+});
+
+// Lightweight image proxy to bypass third-party CORP restrictions (e.g., TikTok CDN avatars)
+app.get('/api/proxy-image', async (req, res) => {
+  try {
+    const raw = (req.query.url || '').toString();
+    if (!raw) return res.status(400).send('Missing url');
+    let u;
+    try { u = new URL(raw); } catch { return res.status(400).send('Invalid url'); }
+    const host = u.hostname || '';
+    // Restrict to TikTok CDN domains
+    if (!/tiktokcdn\.com$/i.test(host)) {
+      return res.status(403).send('Domain not allowed');
+    }
+    const r = await fetch(u.toString(), { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const ct = r.headers.get('content-type') || 'image/*';
+    const ab = await r.arrayBuffer();
+    res.setHeader('Content-Type', ct);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.status(r.status).end(Buffer.from(ab));
+  } catch (e) {
+    console.error('[Backend] proxy-image error:', e);
+    res.status(500).send('Proxy failed');
   }
 });
 

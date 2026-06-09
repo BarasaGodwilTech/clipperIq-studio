@@ -187,8 +187,16 @@ export class TikTokAPI {
     }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error?.message || `TikTok user fetch failed (${res.status})`);
-    await db.setSetting('tiktok_user', JSON.stringify(data.data?.user || {}));
-    return data.data?.user;
+    // Rewrite avatar_url via backend proxy to avoid CORP blocking in some browsers
+    const user = data.data?.user || {};
+    try {
+      if (user.avatar_url) {
+        const base = await getBackendBaseUrl();
+        if (base) user.avatar_url = `${base}/api/proxy-image?url=${encodeURIComponent(user.avatar_url)}`;
+      }
+    } catch {}
+    await db.setSetting('tiktok_user', JSON.stringify(user));
+    return user;
   }
 
   async publishVideo(videoBlob, caption, options = {}, onProgress = null, abortSignal = null) {
