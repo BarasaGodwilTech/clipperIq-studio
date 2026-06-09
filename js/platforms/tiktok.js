@@ -212,7 +212,14 @@ export class TikTokAPI {
       private: 'SELF_ONLY',
       unlisted: 'MUTUAL_FOLLOW_FRIENDS',
     };
-    const privacyLevel = privacyMap[privacy] || 'PUBLIC_TO_EVERYONE';
+    let privacyLevel = privacyMap[privacy] || 'PUBLIC_TO_EVERYONE';
+
+    // Check cached unaudited status — skip the doomed PUBLIC request entirely
+    const cachedUnaudited = await db.getSetting('tiktok_unaudited');
+    if (cachedUnaudited && privacyLevel !== 'SELF_ONLY') {
+      console.warn('[TikTok] App is unaudited (cached) — forcing privacy_level=SELF_ONLY');
+      privacyLevel = 'SELF_ONLY';
+    }
 
     // TikTok requires chunk_size to match exactly the bytes sent per chunk.
     // For videos < 64 MiB, use a single chunk (total_chunk_count=1, chunk_size=video_size).
@@ -231,12 +238,11 @@ export class TikTokAPI {
     const base = await getBackendBaseUrl();
     if (!base) throw new Error('Backend base URL not configured');
 
-    // Build the init request body with both source_info AND post_info
-    // TikTok v2 Content Posting API requires post_info for the video to be published
-    const initBody = {
+    // Build init request body with both source_info AND post_info
+    const buildInitBody = (pLevel) => ({
       post_info: {
         title: (caption || '').slice(0, 150) || 'New video',
-        privacy_level: privacyLevel,
+        privacy_level: pLevel,
         disable_duet: !allowDuet,
         disable_comment: !allowComments,
         disable_stitch: !allowStitch,
@@ -248,8 +254,10 @@ export class TikTokAPI {
         chunk_size: CHUNK_SIZE,
         total_chunk_count: totalChunks,
       },
-    };
+    });
 
+    // Try init with requested privacy; auto-fallback to SELF_ONLY for unaudited apps
+    let initBody = buildInitBody(privacyLevel);
     console.log('[TikTok] Init upload:', {
       videoSize: videoBlob.size,
       chunkSize: CHUNK_SIZE,
@@ -258,7 +266,7 @@ export class TikTokAPI {
       captionLength: (caption || '').length,
     });
 
-    const initRes = await fetch(`${base}/api/tiktok/init`, {
+    let initRes = await fetch(`${base}/api/tiktok/init`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token.access_token}`,
@@ -271,8 +279,37 @@ export class TikTokAPI {
     let initData = {};
     try { initData = await initRes.json(); } catch {}
     console.log('[TikTok] Init response:', initRes.status, JSON.stringify(initData).slice(0, 500));
+
+    // Auto-fallback: unaudited TikTok apps can only post SELF_ONLY (private)
+    // Check both error.code and error.message for robustness across API versions
+    const errCode = initData?.error?.code || '';
+    const errMsg = initData?.error?.message || '';
+    const isUnauditedError = errCode === 'unaudited_client_can_only_post_to_private_accounts'
+      || errMsg.includes('unaudited_client_can_only_post_to_private_accounts')
+      || errMsg.includes('only post to private');
+    if (isUnauditedError && privacyLevel !== 'SELF_ONLY') {
+      console.warn('[TikTok] App is unaudited — retrying with privacy_level=SELF_ONLY');
+      // Cache unaudited status so future posts skip the doomed request
+      try { await db.setSetting('tiktok_unaudited', true); } catch {}
+      privacyLevel = 'SELF_ONLY';
+      initBody = buildInitBody('SELF_ONLY');
+      initRes = await fetch(`${base}/api/tiktok/init`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token.access_token}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        signal: abortSignal || undefined,
+        body: JSON.stringify(initBody),
+      });
+      try { initData = await initRes.json(); } catch {}
+      console.log('[TikTok] Init retry (SELF_ONLY) response:', initRes.status, JSON.stringify(initData).slice(0, 500));
+    }
+
     if (!initRes.ok) {
       const baseMsg = (initData?.error?.message) || initData?.error?.code || initRes.statusText || 'TikTok init failed';
+      // Provide a clear, actionable error for unaudited apps
       const statusTag = (initRes.status === 401 || initRes.status === 403) ? 'Unauthorized' : 'Error';
       throw new Error(`${statusTag}: ${baseMsg}`);
     }
@@ -446,6 +483,7 @@ export class TikTokAPI {
     await db.setSetting('tiktok_user', null);
     await db.setSetting('tiktok_oauth_state', null);
     await db.setSetting('tiktok_oauth_verifier', null);
+    await db.setSetting('tiktok_unaudited', null);
   }
 }
 
