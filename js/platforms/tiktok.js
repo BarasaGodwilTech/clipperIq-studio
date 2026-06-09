@@ -215,8 +215,9 @@ export class TikTokAPI {
 
     // Use small sequential chunks to improve reliability. TikTok validates chunk_size strictly.
     // Rule: use 4 MiB when possible; if the video is smaller than 4 MiB, send a single chunk (video size).
-    const FOUR_MIB = 4 * 1024 * 1024;
-    const CHUNK_SIZE = videoBlob.size < FOUR_MIB ? videoBlob.size : FOUR_MIB;
+    const FOUR_MIB = 5 * 1024 * 1024;
+    const TARGET_CHUNK = 8 * 1024 * 1024;
+    const CHUNK_SIZE = videoBlob.size < FOUR_MIB ? videoBlob.size : Math.min(TARGET_CHUNK, videoBlob.size);
     const totalChunks = Math.max(1, Math.ceil(videoBlob.size / CHUNK_SIZE));
 
     const base = await getBackendBaseUrl();

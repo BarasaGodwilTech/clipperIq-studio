@@ -293,9 +293,19 @@ app.get('/api/tiktok/user', async (req, res) => {
     const auth = req.header('Authorization');
     if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
     const fields = req.query.fields || 'open_id,union_id,avatar_url,display_name,username,follower_count';
-    const r = await fetchWithRetry(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(fields)}`, {
-      headers: { Authorization: auth },
-    }, 20000, 3, 1500);
+    const r = await fetchWithRetry(
+      `https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(fields)}`,
+      {
+        headers: {
+          Authorization: auth,
+          Accept: 'application/json',
+          'User-Agent': 'ClipperIQ/1.0 (+https://clipperiqstudio.willstech.store)'
+        },
+      },
+      30000,
+      3,
+      1500
+    );
     const data = await r.json().catch(() => ({}));
     res.status(r.status).json(data);
   } catch (e) {
