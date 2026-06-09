@@ -41,7 +41,7 @@ export class TikTokAPI {
     const params = OAuthHelper.buildQueryString({
       client_key: clientKey,
       response_type: 'code',
-      scope: 'user.info.basic,user.info.profile,video.upload,video.publish',
+      scope: 'user.info.basic,user.info.profile,user.info.stats,video.upload,video.publish',
       redirect_uri: OAuthHelper.getCallbackUrl(),
       state,
       code_challenge: challenge,
