@@ -36,6 +36,25 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
     clearTimeout(id);
     throw e;
   }
+
+// Simple retry wrapper for transient network failures
+async function fetchWithRetry(url, options = {}, timeout = 15000, attempts = 3, backoffMs = 1200) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetchWithTimeout(url, options, timeout);
+      return res;
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) {
+        await new Promise(r => setTimeout(r, backoffMs * Math.pow(2, i))); // 1.2s, 2.4s, 4.8s
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
 }
 
 app.use(express.json({ limit: '5mb' }));
@@ -274,9 +293,9 @@ app.get('/api/tiktok/user', async (req, res) => {
     const auth = req.header('Authorization');
     if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
     const fields = req.query.fields || 'open_id,union_id,avatar_url,display_name,username,follower_count';
-    const r = await fetchWithTimeout(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(fields)}`, {
+    const r = await fetchWithRetry(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(fields)}`, {
       headers: { Authorization: auth },
-    });
+    }, 20000, 3, 1500);
     const data = await r.json().catch(() => ({}));
     res.status(r.status).json(data);
   } catch (e) {
