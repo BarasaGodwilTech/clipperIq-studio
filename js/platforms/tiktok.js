@@ -46,6 +46,8 @@ export class TikTokAPI {
       state,
       code_challenge: challenge,
       code_challenge_method: 'S256',
+      // Always show the authorization page to allow re-granting scopes
+      disable_auto_auth: 1,
     });
 
     const authUrl = `${TIKTOK_AUTH_URL}?${params}`;
@@ -310,19 +312,33 @@ export class TikTokAPI {
     try {
       const token = await authStore.getToken('tiktok');
       const { clientKey, clientSecret } = await this.getConfig().catch(() => ({ clientKey: null, clientSecret: null }));
-      const revokeToken = token?.refresh_token || token?.access_token;
       const base = await getBackendBaseUrl();
-      if (revokeToken && clientKey && base) {
-        await fetch(`${base}/api/tiktok/revoke`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json; charset=UTF-8', 'ngrok-skip-browser-warning': 'true' },
-          body: JSON.stringify({
-            client_key: clientKey,
-            client_secret: clientSecret || '',
-            token: revokeToken,
-            token_type: token?.refresh_token ? 'refresh_token' : 'access_token',
-          }),
-        }).catch(() => {});
+      if (clientKey && base && token) {
+        // Revoke refresh token first (if present), then access token
+        if (token.refresh_token) {
+          await fetch(`${base}/api/tiktok/revoke`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', 'ngrok-skip-browser-warning': 'true' },
+            body: JSON.stringify({
+              client_key: clientKey,
+              client_secret: clientSecret || '',
+              token: token.refresh_token,
+              token_type: 'refresh_token',
+            }),
+          }).catch(() => {});
+        }
+        if (token.access_token) {
+          await fetch(`${base}/api/tiktok/revoke`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=UTF-8', 'ngrok-skip-browser-warning': 'true' },
+            body: JSON.stringify({
+              client_key: clientKey,
+              client_secret: clientSecret || '',
+              token: token.access_token,
+              token_type: 'access_token',
+            }),
+          }).catch(() => {});
+        }
       }
     } catch {}
     await authStore.removeToken('tiktok');
