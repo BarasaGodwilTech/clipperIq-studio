@@ -269,6 +269,8 @@ app.post(
       const uploadUrl = req.query.upload_url;
       if (!uploadUrl) return res.status(400).json({ error: 'Missing upload_url' });
       const contentRange = req.header('Content-Range');
+      const controller = new AbortController();
+      const to = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minutes
       const r = await fetch(uploadUrl, {
         method: 'PUT',
         headers: {
@@ -276,7 +278,9 @@ app.post(
           'Content-Type': 'video/mp4',
         },
         body: req.body,
+        signal: controller.signal,
       });
+      clearTimeout(to);
       const txt = await r.text().catch(() => '');
       res.status(r.status).send(txt);
     } catch (e) {

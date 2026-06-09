@@ -263,6 +263,8 @@ export class TikTokAPI {
       xhr.setRequestHeader('Content-Type', 'video/mp4');
       xhr.setRequestHeader('Content-Range', `bytes ${start}-${end - 1}/${videoBlob.size}`);
       xhr.setRequestHeader('ngrok-skip-browser-warning', 'true');
+      // Add a conservative timeout to prevent hanging connections (fallback will kick in)
+      xhr.timeout = 180000; // 3 minutes
       let aborted = false;
       const aborter = () => { aborted = true; try { xhr.abort(); } catch {} };
       if (abortSignal) abortSignal.addEventListener('abort', aborter, { once: true });
@@ -283,6 +285,10 @@ export class TikTokAPI {
         }
         reject(new Error('Network error during upload'));
       };
+      xhr.ontimeout = () => {
+        if (aborted) return reject(new DOMException('Aborted', 'AbortError'));
+        reject(new Error('Upload timed out'));
+      };
       xhr.send(chunk);
       // Cleanup
       xhr.onloadend = () => { if (abortSignal) try { abortSignal.removeEventListener('abort', aborter); } catch {} };
@@ -293,7 +299,26 @@ export class TikTokAPI {
     const start = 0;
     const end = videoBlob.size;
     const chunk = videoBlob.slice(start, end);
-    await xhrUpload(start, end, chunk, 0);
+    try {
+      await xhrUpload(start, end, chunk, 0);
+    } catch (e) {
+      // Fallback to fetch-based upload through backend if XHR stalls or errors
+      if (abortSignal?.aborted) throw e;
+      const res = await fetch(`${base}/api/tiktok/upload?upload_url=${encodeURIComponent(upload_url)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Range': `bytes ${start}-${end - 1}/${videoBlob.size}`,
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: chunk,
+        signal: abortSignal || undefined,
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`Upload failed (${res.status}): ${txt?.slice(0,120)}`);
+      }
+    }
     if (onProgress) onProgress(90);
 
     if (onProgress) onProgress(95);
