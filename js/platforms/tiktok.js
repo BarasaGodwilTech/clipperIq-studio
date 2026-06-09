@@ -361,12 +361,13 @@ export class TikTokAPI {
     return res;
   }
 
-  async pollPublishStatus(accessToken, publishId, maxAttempts = 40, abortSignal = null) {
+  async pollPublishStatus(accessToken, publishId, maxAttempts = 60, abortSignal = null) {
     const start = Date.now();
-    const budgetMs = 300000;
+    const budgetMs = 600000; // 10 minutes
     for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, 5000)); // Poll every 5s
       if (Date.now() - start > budgetMs) throw new Error('TikTok publish status polling timed out');
+      if (abortSignal?.aborted) throw new DOMException('Aborted', 'AbortError');
       const base = await getBackendBaseUrl();
       const res = await fetchWithTimeout(`${base}/api/tiktok/status`, {
         method: 'POST',
@@ -382,6 +383,7 @@ export class TikTokAPI {
       }
       const data = await res.json().catch(() => ({}));
       const status = data.data?.status;
+      console.log(`[TikTok] Status poll #${i + 1}: ${status || 'unknown'}`, JSON.stringify(data).slice(0, 200));
       if (status === 'PUBLISH_COMPLETE') {
         const videoId = data.data?.video_id || data.data?.publish_video_id || null;
         let url = null;
@@ -397,9 +399,12 @@ export class TikTokAPI {
         return { publishId, status, videoId, url, data };
       }
       if (status === 'FAILED') {
-        const msg = data?.error?.message || data?.data?.message || 'TikTok publish failed';
+        const failCode = data.data?.fail_code;
+        const msg = data?.error?.message || data?.data?.message || `TikTok publish failed (code: ${failCode || 'unknown'})`;
         throw new Error(`TikTok publish failed: ${msg}`);
       }
+      // Status can be: PROCESSING_UPLOAD, PROCESSING_DOWNLOAD, SEND_TO_USER_INBOX, etc.
+      // These are all transient — keep polling.
     }
     throw new Error('TikTok publish status polling timed out');
   }
