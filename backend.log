@@ -2,3 +2,19 @@
 ClipperIQ Audio Backend running on port 3000
 Ready to extract audio from TikTok & YouTube!
 ===========================================
+[Backend] TikTok init error: [TypeError: fetch failed] {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1193:18)
+      at afterConnectMultiple (node:net:1783:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+[Backend] TikTok init error: [TypeError: fetch failed] {
+  [cause]: ConnectTimeoutError: Connect Timeout Error (attempted addresses: 2.17.161.97:443, 2.17.161.80:443, timeout: 10000ms)
+      at onConnectTimeout (node:internal/deps/undici/undici:1991:23)
+      at Immediate._onImmediate (node:internal/deps/undici/undici:1972:11)
+      at process.processImmediate (node:internal/timers:504:21) {
+    code: 'UND_ERR_CONNECT_TIMEOUT'
+  }
+}
