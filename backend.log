@@ -18,3 +18,19 @@ Ready to extract audio from TikTok & YouTube!
     code: 'UND_ERR_CONNECT_TIMEOUT'
   }
 }
+[Backend] TikTok user error: [TypeError: fetch failed] {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1193:18)
+      at afterConnectMultiple (node:net:1783:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+[Backend] TikTok init error: [TypeError: fetch failed] {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1193:18)
+      at afterConnectMultiple (node:net:1783:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error] ]
+  }
+}

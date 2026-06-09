@@ -229,14 +229,6 @@ export class TikTokAPI {
       },
       signal: abortSignal || undefined,
       body: JSON.stringify({
-        post_info: {
-          title: caption.slice(0, 150),
-          privacy_level: privacyLevel,
-          disable_duet: !allowDuet,
-          disable_comment: !allowComments,
-          disable_stitch: true,
-          video_cover_timestamp_ms: 1000,
-        },
         source_info: {
           source: 'FILE_UPLOAD',
           video_size: videoBlob.size,
