@@ -227,8 +227,13 @@ export class TikTokAPI {
         },
       }),
     });
-
-    const initData = await initRes.json();
+    let initData = {};
+    try { initData = await initRes.json(); } catch {}
+    if (!initRes.ok) {
+      const baseMsg = (initData?.error?.message) || initRes.statusText || 'TikTok init failed';
+      const statusTag = (initRes.status === 401 || initRes.status === 403) ? 'Unauthorized' : 'Error';
+      throw new Error(`${statusTag}: ${baseMsg}`);
+    }
     if (initData.error?.code && initData.error.code !== 'ok') {
       const msg = initData.error.message || 'TikTok init failed';
       throw new Error(msg);
@@ -287,7 +292,10 @@ export class TikTokAPI {
         },
         body: JSON.stringify({ publish_id: publishId }),
       }, 15000);
-      const data = await res.json();
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('Unauthorized: TikTok status');
+      }
+      const data = await res.json().catch(() => ({}));
       const status = data.data?.status;
       if (status === 'PUBLISH_COMPLETE') {
         const videoId = data.data?.video_id || data.data?.publish_video_id || null;
@@ -303,7 +311,10 @@ export class TikTokAPI {
         }
         return { publishId, status, videoId, url, data };
       }
-      if (status === 'FAILED') throw new Error(`TikTok publish failed: ${JSON.stringify(data.data)}`);
+      if (status === 'FAILED') {
+        const msg = data?.error?.message || data?.data?.message || 'TikTok publish failed';
+        throw new Error(`TikTok publish failed: ${msg}`);
+      }
     }
     throw new Error('TikTok publish status polling timed out');
   }

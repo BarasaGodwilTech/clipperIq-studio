@@ -36,6 +36,23 @@ export class CronEngine {
   async _tick() {
     if (this.onTick) this.onTick();
     try {
+      // Heal stale RUNNING jobs (e.g., tab crashed or network lost)
+      try {
+        const running = await jobQueue.getByStatus(JOB_STATUS.RUNNING);
+        const STALE_MS = 10 * 60 * 1000; // 10 minutes
+        const now = Date.now();
+        for (const j of running) {
+          const updated = new Date(j.updatedAt || j.createdAt || Date.now()).getTime();
+          if (now - updated > STALE_MS) {
+            const next = new Date(now + 15000).toISOString();
+            await jobQueue.markFailed(j.id, 'Worker reset: previous run became stale', next);
+            console.warn(`[CronEngine] Recovered stale job ${j.id}; rescheduled at ${next}`);
+          }
+        }
+      } catch (e) {
+        console.warn('[CronEngine] Stale job recovery failed:', e?.message || e);
+      }
+
       const duePosts = await jobQueue.getDue(new Date());
       if (duePosts.length === 0) return;
       console.log(`[CronEngine] ${duePosts.length} post(s) due`);
