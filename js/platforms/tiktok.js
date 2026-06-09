@@ -201,7 +201,7 @@ export class TikTokAPI {
 
   async publishVideo(videoBlob, caption, options = {}, onProgress = null, abortSignal = null) {
     const token = await this.getValidToken();
-    const { privacy = 'PUBLIC_TO_EVERYONE', allowComments = true, allowDuet = false } = options;
+    const { privacy = 'PUBLIC_TO_EVERYONE', allowComments = true, allowDuet = false, allowStitch = true, allowPromotion = true } = options;
 
     // Map UI values to TikTok enums for privacy_level (backward compatible)
     const privacyMap = {
@@ -210,17 +210,54 @@ export class TikTokAPI {
       SELF_ONLY: 'SELF_ONLY',
       public: 'PUBLIC_TO_EVERYONE',
       private: 'SELF_ONLY',
+      unlisted: 'MUTUAL_FOLLOW_FRIENDS',
     };
     const privacyLevel = privacyMap[privacy] || 'PUBLIC_TO_EVERYONE';
 
-    // Use small sequential chunks to improve reliability. TikTok validates chunk_size strictly.
-    // Rule: use 4 MiB when possible; if the video is smaller than 4 MiB, send a single chunk (video size).
-    const FOUR_MIB = 5 * 1024 * 1024;
-    const TARGET_CHUNK = 8 * 1024 * 1024;
-    const CHUNK_SIZE = videoBlob.size < FOUR_MIB ? videoBlob.size : Math.min(TARGET_CHUNK, videoBlob.size);
-    const totalChunks = Math.max(1, Math.ceil(videoBlob.size / CHUNK_SIZE));
+    // TikTok requires chunk_size to match exactly the bytes sent per chunk.
+    // For videos < 64 MiB, use a single chunk (total_chunk_count=1, chunk_size=video_size).
+    // For larger videos, split into 64 MiB chunks.
+    const SIXTY_FOUR_MIB = 64 * 1024 * 1024;
+    let CHUNK_SIZE, totalChunks;
+    if (videoBlob.size <= SIXTY_FOUR_MIB) {
+      // Single chunk upload — simplest and most reliable
+      CHUNK_SIZE = videoBlob.size;
+      totalChunks = 1;
+    } else {
+      CHUNK_SIZE = SIXTY_FOUR_MIB;
+      totalChunks = Math.ceil(videoBlob.size / CHUNK_SIZE);
+    }
 
     const base = await getBackendBaseUrl();
+    if (!base) throw new Error('Backend base URL not configured');
+
+    // Build the init request body with both source_info AND post_info
+    // TikTok v2 Content Posting API requires post_info for the video to be published
+    const initBody = {
+      post_info: {
+        title: (caption || '').slice(0, 150) || 'New video',
+        privacy_level: privacyLevel,
+        disable_duet: !allowDuet,
+        disable_comment: !allowComments,
+        disable_stitch: !allowStitch,
+        allow_promotion: allowPromotion,
+      },
+      source_info: {
+        source: 'FILE_UPLOAD',
+        video_size: videoBlob.size,
+        chunk_size: CHUNK_SIZE,
+        total_chunk_count: totalChunks,
+      },
+    };
+
+    console.log('[TikTok] Init upload:', {
+      videoSize: videoBlob.size,
+      chunkSize: CHUNK_SIZE,
+      totalChunks,
+      privacyLevel,
+      captionLength: (caption || '').length,
+    });
+
     const initRes = await fetch(`${base}/api/tiktok/init`, {
       method: 'POST',
       headers: {
@@ -229,19 +266,13 @@ export class TikTokAPI {
         'ngrok-skip-browser-warning': 'true',
       },
       signal: abortSignal || undefined,
-      body: JSON.stringify({
-        source_info: {
-          source: 'FILE_UPLOAD',
-          video_size: videoBlob.size,
-          chunk_size: CHUNK_SIZE,
-          total_chunk_count: totalChunks,
-        },
-      }),
+      body: JSON.stringify(initBody),
     });
     let initData = {};
     try { initData = await initRes.json(); } catch {}
+    console.log('[TikTok] Init response:', initRes.status, JSON.stringify(initData).slice(0, 500));
     if (!initRes.ok) {
-      const baseMsg = (initData?.error?.message) || initRes.statusText || 'TikTok init failed';
+      const baseMsg = (initData?.error?.message) || initData?.error?.code || initRes.statusText || 'TikTok init failed';
       const statusTag = (initRes.status === 401 || initRes.status === 403) ? 'Unauthorized' : 'Error';
       throw new Error(`${statusTag}: ${baseMsg}`);
     }

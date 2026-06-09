@@ -202,12 +202,14 @@ app.post('/api/tiktok/init', async (req, res) => {
   try {
     const auth = req.header('Authorization');
     if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
+    console.log('[Backend] TikTok init request:', JSON.stringify(req.body || {}).slice(0, 500));
     const r = await fetchWithTimeout('https://open.tiktokapis.com/v2/post/publish/inbox/video/init/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=UTF-8', Authorization: auth },
       body: JSON.stringify(req.body || {}),
-    });
+    }, 30000); // 30s timeout for init
     const data = await r.json().catch(() => ({}));
+    console.log('[Backend] TikTok init response:', r.status, JSON.stringify(data).slice(0, 500));
     res.status(r.status).json(data);
   } catch (e) {
     console.error('[Backend] TikTok init error:', e);
@@ -251,7 +253,7 @@ app.post('/api/tiktok/token', async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
-    });
+    }, 30000);
     const data = await r.json().catch(() => ({}));
     res.status(r.status).json(data);
   } catch (e) {
@@ -291,7 +293,7 @@ app.post('/api/tiktok/status', async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=UTF-8', Authorization: auth },
       body: JSON.stringify(req.body || {}),
-    });
+    }, 30000);
     const data = await r.json().catch(() => ({}));
     res.status(r.status).json(data);
   } catch (e) {
@@ -344,7 +346,13 @@ app.post(
       const contentRange = req.header('Content-Range');
       // Derive content length from raw body when available to reduce proxy 503s
       const contentLength = Buffer.isBuffer(req.body) ? req.body.length : undefined;
-      // Try PUT first (common for resumable uploads). If upstream rejects, try POST.
+
+      console.log('[Backend] TikTok upload chunk:', {
+        contentRange,
+        contentLength,
+        uploadUrlStart: uploadUrl.slice(0, 80),
+      });
+
       const buildReq = (method) => ({
         method,
         headers: {
@@ -356,16 +364,22 @@ app.post(
         },
         body: req.body,
       });
-      let r = await fetchWithRetry(uploadUrl, buildReq('PUT'), 5 * 60 * 1000, 3, 800);
+
+      // Use PUT — TikTok's upload_url accepts PUT for chunked uploads
+      let r = await fetchWithRetry(uploadUrl, buildReq('PUT'), 5 * 60 * 1000, 3, 1500);
+
       // Fallback to POST for servers expecting POST to upload_url
       if (!r.ok && (r.status === 404 || r.status === 405 || r.status === 503)) {
+        console.log('[Backend] TikTok upload PUT failed (' + r.status + '), trying POST fallback');
         try {
-          r = await fetchWithRetry(uploadUrl, buildReq('POST'), 5 * 60 * 1000, 2, 800);
+          r = await fetchWithRetry(uploadUrl, buildReq('POST'), 5 * 60 * 1000, 2, 1500);
         } catch (e) {
-          // ignore; will handle below
+          console.error('[Backend] TikTok POST fallback also failed:', e.message);
         }
       }
+
       const txt = await r.text().catch(() => '');
+      console.log('[Backend] TikTok upload response:', r.status, txt.slice(0, 200));
       res.status(r.status).send(txt);
     } catch (e) {
       console.error('[Backend] TikTok upload error:', e);
