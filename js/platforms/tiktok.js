@@ -92,7 +92,10 @@ export class TikTokAPI {
     });
 
     const data = await res.json();
-    if (data.error) throw new Error(data.error_description || data.error);
+    if (!res.ok || data.error) {
+      const msg = data.error_description || data.error_description || data.error || `TikTok token exchange failed (HTTP ${res.status})`;
+      throw new Error(msg);
+    }
 
     const tokenData = {
       access_token: data.access_token,
@@ -137,7 +140,10 @@ export class TikTokAPI {
     });
 
     const data = await res.json();
-    if (data.error) throw new Error(data.error_description || data.error);
+    if (!res.ok || data.error) {
+      const msg = data.error_description || data.error || `TikTok refresh failed (HTTP ${res.status})`;
+      throw new Error(msg);
+    }
 
     await authStore.setToken('tiktok', {
       ...token,

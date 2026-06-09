@@ -571,7 +571,14 @@ class ClipperIQApp {
       }
       if (handle) notify.success(`${platform} connected as ${handle}`); else notify.success(`${platform} connected!`);
     } catch (err) {
-      notify.error(`Couldn't connect to ${platform}. Please try again.`);
+      const detail = err?.message || '';
+      const isNetwork = detail.includes('timeout') || detail.includes('network') || detail.includes('Cannot reach');
+      const userMsg = isNetwork
+        ? `${platform} connection failed: server can't reach ${platform}. Check your server's internet connection.`
+        : detail
+          ? `${platform}: ${detail}`
+          : `Couldn't connect to ${platform}. Please try again.`;
+      notify.error(userMsg);
       console.error(`[Auth] ${platform} connect error:`, err);
     } finally {
       this._connecting = false;

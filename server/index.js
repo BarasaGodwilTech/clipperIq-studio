@@ -3,6 +3,9 @@ const cors = require('cors');
 const ytDlp = require('youtube-dl-exec');
 const fs = require('fs');
 const path = require('path');
+// Use node-fetch instead of Node.js built-in fetch (undici) to avoid
+// ETIMEDOUT / ECONNRESET issues with certain APIs (e.g. TikTok).
+const fetch = require('node-fetch');
 
 const app = express();
 
@@ -249,16 +252,22 @@ app.post('/api/tiktok/token', async (req, res) => {
       }
       body.set('refresh_token', refresh_token);
     }
-    const r = await fetchWithTimeout('https://open.tiktokapis.com/v2/oauth/token/', {
+    console.log('[Backend] TikTok token request:', grant_type, 'client_key=', client_key.slice(0, 6) + '...');
+    const r = await fetchWithRetry('https://open.tiktokapis.com/v2/oauth/token/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
-    }, 30000);
+    }, 30000, 3, 1500);
     const data = await r.json().catch(() => ({}));
+    console.log('[Backend] TikTok token response:', r.status, JSON.stringify(data).slice(0, 300));
     res.status(r.status).json(data);
   } catch (e) {
     console.error('[Backend] TikTok token error:', e);
-    res.status(500).json({ error: 'TikTok token exchange failed' });
+    const isTimeout = e.cause?.code === 'ETIMEDOUT' || e.cause?.code === 'UND_ERR_CONNECT_TIMEOUT' || e.name === 'AbortError';
+    const detail = isTimeout
+      ? 'Cannot reach TikTok API from this server (network timeout). Ensure the server has outbound internet access.'
+      : (e.message || 'TikTok token exchange failed');
+    res.status(502).json({ error: detail, error_description: detail });
   }
 });
 
