@@ -10,7 +10,7 @@ const app = express();
 const corsOptions = {
   origin: true, // reflect request origin
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Content-Range', 'Range', 'ngrok-skip-browser-warning'],
+  // Let cors package reflect Access-Control-Request-Headers dynamically
   exposedHeaders: ['Content-Range', 'Range'],
   credentials: false,
   maxAge: 86400,
@@ -21,6 +21,18 @@ app.options('*', cors(corsOptions));
 // Help pages using COEP embed cross-origin images from this backend
 app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+});
+
+// Augment CORS for proxies behind tunnels/CDNs that strip Vary
+app.use((req, res, next) => {
+  try {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const reqHeaders = req.header('Access-Control-Request-Headers');
+    if (reqHeaders) res.setHeader('Access-Control-Allow-Headers', reqHeaders);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Vary', 'Origin');
+  } catch {}
   next();
 });
 
@@ -322,13 +334,19 @@ app.post(
   express.raw({ type: 'video/*', limit: '500mb' }),
   async (req, res) => {
     try {
+      // Ensure permissive CORS on upload responses (including errors below)
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Headers', req.header('Access-Control-Request-Headers') || '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
       const uploadUrl = req.query.upload_url;
       if (!uploadUrl) return res.status(400).json({ error: 'Missing upload_url' });
       const contentRange = req.header('Content-Range');
       // Derive content length from raw body when available to reduce proxy 503s
       const contentLength = Buffer.isBuffer(req.body) ? req.body.length : undefined;
-      const r = await fetchWithRetry(uploadUrl, {
-        method: 'PUT',
+      // Try PUT first (common for resumable uploads). If upstream rejects, try POST.
+      const buildReq = (method) => ({
+        method,
         headers: {
           'Content-Range': contentRange || '',
           'Content-Type': 'video/mp4',
@@ -337,12 +355,25 @@ app.post(
           'Accept': '*/*',
         },
         body: req.body,
-      }, 5 * 60 * 1000, 3, 800);
+      });
+      let r = await fetchWithRetry(uploadUrl, buildReq('PUT'), 5 * 60 * 1000, 3, 800);
+      // Fallback to POST for servers expecting POST to upload_url
+      if (!r.ok && (r.status === 404 || r.status === 405 || r.status === 503)) {
+        try {
+          r = await fetchWithRetry(uploadUrl, buildReq('POST'), 5 * 60 * 1000, 2, 800);
+        } catch (e) {
+          // ignore; will handle below
+        }
+      }
       const txt = await r.text().catch(() => '');
       res.status(r.status).send(txt);
     } catch (e) {
       console.error('[Backend] TikTok upload error:', e);
       // Use 502 to indicate upstream failure but keep CORS visible to browser
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Headers', req.header('Access-Control-Request-Headers') || '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
       res.status(502).json({ error: 'TikTok upload failed' });
     }
   }

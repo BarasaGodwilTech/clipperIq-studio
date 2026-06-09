@@ -258,6 +258,7 @@ export class TikTokAPI {
       xhr.setRequestHeader('Content-Type', 'video/mp4');
       xhr.setRequestHeader('Content-Range', `bytes ${start}-${end - 1}/${videoBlob.size}`);
       xhr.setRequestHeader('ngrok-skip-browser-warning', 'true');
+      xhr.withCredentials = false;
       // Add a conservative timeout to prevent hanging connections (fallback will kick in)
       xhr.timeout = 180000; // 3 minutes
       let aborted = false;
@@ -309,6 +310,8 @@ export class TikTokAPI {
           },
           body: chunk,
           signal: abortSignal || undefined,
+          mode: 'cors',
+          credentials: 'omit',
         });
         if (!res.ok) {
           const txt = await res.text().catch(() => '');

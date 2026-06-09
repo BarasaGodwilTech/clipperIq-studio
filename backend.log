@@ -42,3 +42,43 @@ Ready to extract audio from TikTok & YouTube!
     [errors]: [ [Error], [Error] ]
   }
 }
+BadRequestError: request aborted
+    at IncomingMessage.onAborted (/Users/chasexc/Desktop/GODWILL/Windsurf/clipperIq-studio/server/node_modules/raw-body/index.js:245:10)
+    at IncomingMessage.emit (node:events:509:28)
+    at IncomingMessage._destroy (node:_http_incoming:244:10)
+    at _destroy (node:internal/streams/destroy:122:10)
+    at IncomingMessage.destroy (node:internal/streams/destroy:84:5)
+    at abortIncoming (node:_http_server:855:9)
+    at socketOnClose (node:_http_server:848:3)
+    at Socket.emit (node:events:521:24)
+    at TCP.<anonymous> (node:net:350:12)
+BadRequestError: request aborted
+    at IncomingMessage.onAborted (/Users/chasexc/Desktop/GODWILL/Windsurf/clipperIq-studio/server/node_modules/raw-body/index.js:245:10)
+    at IncomingMessage.emit (node:events:509:28)
+    at IncomingMessage._destroy (node:_http_incoming:244:10)
+    at _destroy (node:internal/streams/destroy:122:10)
+    at IncomingMessage.destroy (node:internal/streams/destroy:84:5)
+    at abortIncoming (node:_http_server:855:9)
+    at socketOnClose (node:_http_server:848:3)
+    at Socket.emit (node:events:521:24)
+    at TCP.<anonymous> (node:net:350:12)
+BadRequestError: request aborted
+    at IncomingMessage.onAborted (/Users/chasexc/Desktop/GODWILL/Windsurf/clipperIq-studio/server/node_modules/raw-body/index.js:245:10)
+    at IncomingMessage.emit (node:events:509:28)
+    at IncomingMessage._destroy (node:_http_incoming:244:10)
+    at _destroy (node:internal/streams/destroy:122:10)
+    at IncomingMessage.destroy (node:internal/streams/destroy:84:5)
+    at abortIncoming (node:_http_server:855:9)
+    at socketOnClose (node:_http_server:848:3)
+    at Socket.emit (node:events:521:24)
+    at TCP.<anonymous> (node:net:350:12)
+BadRequestError: request aborted
+    at IncomingMessage.onAborted (/Users/chasexc/Desktop/GODWILL/Windsurf/clipperIq-studio/server/node_modules/raw-body/index.js:245:10)
+    at IncomingMessage.emit (node:events:509:28)
+    at IncomingMessage._destroy (node:_http_incoming:244:10)
+    at _destroy (node:internal/streams/destroy:122:10)
+    at IncomingMessage.destroy (node:internal/streams/destroy:84:5)
+    at abortIncoming (node:_http_server:855:9)
+    at socketOnClose (node:_http_server:848:3)
+    at Socket.emit (node:events:521:24)
+    at TCP.<anonymous> (node:net:350:12)
