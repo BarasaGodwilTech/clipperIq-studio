@@ -60,6 +60,12 @@ self.addEventListener('fetch', (event) => {
   const isStaticAsset = isLocal && STATIC_ASSETS.some(a => url.pathname === a || url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.html') || url.pathname.endsWith('.json'));
   const isFFmpegAsset = url.hostname.includes('unpkg.com') || url.hostname.includes('cdn.jsdelivr.net');
 
+  // Do not intercept cross-origin requests (except whitelisted CDNs) to avoid
+  // COEP/CORP issues with third-party APIs like Google Firestore or TikTok CDN
+  if (!isLocal && !isFFmpegAsset) {
+    return; // allow the browser to handle normally
+  }
+
   if (isFFmpegAsset) {
     event.respondWith(
       caches.open(CACHE_VERSION).then(async (cache) => {

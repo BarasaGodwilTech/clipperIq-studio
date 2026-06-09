@@ -46,9 +46,17 @@ export class CronEngine {
         for (const j of running) {
           const updated = new Date(j.updatedAt || j.createdAt || Date.now()).getTime();
           if (now - updated > STALE_MS) {
-            const next = new Date(now + 15000).toISOString();
-            await jobQueue.markFailed(j.id, 'Worker reset: previous run became stale', next);
-            console.warn(`[CronEngine] Recovered stale job ${j.id}; rescheduled at ${next}`);
+            // Respect retry limits on stale recovery
+            const fresh = await jobQueue.getById(j.id);
+            const canRetry = fresh && (fresh.retryCount || 0) < (fresh.maxRetries ?? 3);
+            if (canRetry) {
+              const next = new Date(now + 15000).toISOString();
+              await jobQueue.markFailed(j.id, 'Worker reset: previous run became stale', next);
+              console.warn(`[CronEngine] Recovered stale job ${j.id}; rescheduled at ${next}`);
+            } else {
+              await jobQueue.markFailed(j.id, 'Worker reset: previous run became stale (max retries reached)', null);
+              console.warn(`[CronEngine] Stale job ${j.id} marked failed (retry limit reached)`);
+            }
           }
         }
       } catch (e) {
