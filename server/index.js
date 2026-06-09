@@ -69,6 +69,16 @@ app.post('/api/youtube/init', async (req, res) => {
     if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
 
     const meta = req.body || {};
+    // Normalize privacy status to YouTube API values
+    const privacyMap = {
+      PUBLIC_TO_EVERYONE: 'public',
+      MUTUAL_FOLLOW_FRIENDS: 'unlisted',
+      SELF_ONLY: 'private',
+      public: 'public',
+      private: 'private',
+      unlisted: 'unlisted',
+    };
+    const privacyStatus = privacyMap[meta.privacy] || 'public';
     const payload = {
       snippet: {
         title: meta.title || 'Short',
@@ -77,7 +87,7 @@ app.post('/api/youtube/init', async (req, res) => {
         categoryId: meta.categoryId || '22',
       },
       status: {
-        privacyStatus: meta.privacy || 'public',
+        privacyStatus,
         selfDeclaredMadeForKids: false,
       },
     };
