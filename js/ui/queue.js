@@ -173,7 +173,6 @@ export const queueUI = {
   },
 
   async stop(id) {
-    if (this._shouldConfirm(`stop:${id}`, 'Tap again to stop this job')) return;
     const btn = document.activeElement && document.activeElement.tagName === 'BUTTON' ? document.activeElement : null;
     if (btn) btn.disabled = true;
     try { await cronEngine.cancel(id); notify.info('Posting stopped'); }

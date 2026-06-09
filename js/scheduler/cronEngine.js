@@ -188,8 +188,9 @@ export class CronEngine {
     const ctrl = this.jobAbortControllers.get(jobId);
     if (ctrl) {
       ctrl.abort();
+      // Reflect cancellation immediately in storage/UI
+      await jobQueue.cancel(jobId);
     } else {
-      // If not currently running, mark as cancelled directly
       await jobQueue.cancel(jobId);
     }
   }
