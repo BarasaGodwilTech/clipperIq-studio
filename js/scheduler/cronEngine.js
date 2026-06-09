@@ -165,7 +165,7 @@ export class CronEngine {
         description: post.caption || '',
         tags: post.options?.tags || [],
         privacy: post.options?.privacy || 'public',
-      }, (pct) => jobQueue.setProgress(post.id, pct));
+      }, (pct) => jobQueue.setProgress(post.id, pct), abortSignal);
     }
     throw new Error(`Unsupported platform: ${platform}`);
   }

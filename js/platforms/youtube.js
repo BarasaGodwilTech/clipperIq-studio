@@ -157,7 +157,7 @@ export class YouTubeAPI {
     return this.uploadChunkedViaProxy(base, initData.sid, videoBlob, onProgress);
   }
 
-  async uploadChunkedViaProxy(base, sid, videoBlob, onProgress = null) {
+  async uploadChunkedViaProxy(base, sid, videoBlob, onProgress = null, abortSignal = null) {
     const totalSize = videoBlob.size;
     let offset = 0;
     const endpoint = `${base}/api/youtube/upload?sid=${encodeURIComponent(sid)}`;
@@ -166,17 +166,54 @@ export class YouTubeAPI {
       const end = Math.min(offset + CHUNK_SIZE, totalSize);
       const chunk = videoBlob.slice(offset, end);
 
-      const res = await fetch(endpoint, {
-        method: 'PUT',
-        headers: {
-          'Content-Range': `bytes ${offset}-${end - 1}/${totalSize}`,
-          'Content-Type': 'video/mp4',
-        },
-        body: chunk,
+      // Use XMLHttpRequest for real-time progress updates
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', endpoint);
+      xhr.setRequestHeader('Content-Range', `bytes ${offset}-${end - 1}/${totalSize}`);
+      xhr.setRequestHeader('Content-Type', 'video/mp4');
+
+      let aborted = false;
+      const aborter = () => { aborted = true; try { xhr.abort(); } catch {} };
+      if (abortSignal) abortSignal.addEventListener('abort', aborter, { once: true });
+
+      xhr.upload.onprogress = (e) => {
+        if (!onProgress || !e.lengthComputable) return;
+        const sentSoFar = offset + e.loaded;
+        const ratio = sentSoFar / totalSize;
+        onProgress(Math.round(ratio * 100));
+      };
+
+      const uploadPromise = new Promise((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              resolve({ status: xhr.status, data });
+            } catch {
+              resolve({ status: xhr.status, data: {} });
+            }
+          } else if (xhr.status === 308) {
+            resolve({ status: 308, data: {} });
+          } else {
+            reject(new Error(`Upload chunk failed: ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => {
+          if (aborted) return reject(new DOMException('Aborted', 'AbortError'));
+          reject(new Error('Network error during upload'));
+        };
+        xhr.ontimeout = () => {
+          if (aborted) return reject(new DOMException('Aborted', 'AbortError'));
+          reject(new Error('Upload timed out'));
+        };
+        xhr.send(chunk);
+        xhr.onloadend = () => { if (abortSignal) try { abortSignal.removeEventListener('abort', aborter); } catch {} };
       });
 
-      if (res.status === 308) {
-        const range = res.headers.get('Range');
+      const result = await uploadPromise;
+
+      if (result.status === 308) {
+        const range = xhr.getResponseHeader('Range');
         if (range) {
           offset = parseInt(range.split('-')[1]) + 1;
         } else {
@@ -186,16 +223,11 @@ export class YouTubeAPI {
         continue;
       }
 
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
+      if (result.status >= 200 && result.status < 300) {
         if (onProgress) onProgress(100);
-        const url = data.id ? `https://youtu.be/${data.id}` : null;
-        return { videoId: data.id, url, data };
+        const url = result.data.id ? `https://youtu.be/${result.data.id}` : null;
+        return { videoId: result.data.id, url, data: result.data };
       }
-
-      let errMsg = 'YouTube chunk upload failed';
-      try { const err = await res.json(); errMsg = err.error?.message || errMsg; } catch {}
-      throw new Error(errMsg + `: ${res.status}`);
     }
   }
 
