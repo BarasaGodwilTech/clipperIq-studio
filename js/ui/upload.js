@@ -15,6 +15,7 @@ export const uploadUI = {
   isProcessing: false,
   _seriesIndex: null,
   _titleDebounce: null,
+  _cancelConfirmTs: 0,
 
   init() {
     const zone = document.getElementById('uploadZone');
@@ -62,18 +63,21 @@ export const uploadUI = {
     if (badge) badge.style.display = 'inline-flex';
   },
 
-  // Soft-cancel UI: prompt user; processing continues or modal closes. Does not touch pipeline.
+  // Soft-cancel UI without browser popups. Double-tap to confirm close.
   cancelOrClose() {
-    const confirmCancel = confirm('Do you want to cancel processing? You can keep already processed clips.');
-    if (confirmCancel) {
-      const keep = confirm('Keep clips that are already processed?');
-      // Clips already saved are persisted; we simply hide the modal either way.
-      const modal = document.getElementById('procModal');
-      if (modal) modal.classList.remove('show');
-      window.app?._unlockBodyScroll?.();
-      const badge = document.getElementById('bgProcBadge');
-      if (badge) badge.style.display = 'none';
+    const now = Date.now();
+    if (!this._cancelConfirmTs || (now - this._cancelConfirmTs) > 4000) {
+      this._cancelConfirmTs = now;
+      notify.warn('Tap again to close the processing window');
+      setTimeout(() => { if (this._cancelConfirmTs === now) this._cancelConfirmTs = 0; }, 4000);
+      return;
     }
+    this._cancelConfirmTs = 0;
+    const modal = document.getElementById('procModal');
+    if (modal) modal.classList.remove('show');
+    window.app?._unlockBodyScroll?.();
+    const badge = document.getElementById('bgProcBadge');
+    if (badge) badge.style.display = 'none';
   },
 
   reopenModal() {
@@ -207,7 +211,7 @@ export const uploadUI = {
     } catch (err) {
       console.error('[Upload] Processing failed:', err);
       this.hideModal();
-      notify.error(`Processing failed: ${err.message}`);
+      notify.error('Processing failed. Please try again.');
     } finally {
       this.isProcessing = false;
       const preview = document.getElementById('procLivePreview');

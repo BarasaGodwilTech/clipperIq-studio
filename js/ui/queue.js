@@ -33,6 +33,7 @@ const platformColor = (p) => {
 export const queueUI = {
   jobs: [],
   countdownInterval: null,
+  _confirmMap: {},
 
   async refresh() {
     this.jobs = await jobQueue.getAll();
@@ -82,7 +83,7 @@ export const queueUI = {
         <button class="btn btn-danger btn-sm" onclick="window.queueUI.remove(${j.id})">Remove</button>`,
     }[j.status] || '';
 
-    const errorTip = j.lastError ? ` title="${j.lastError.replace(/"/g, '&quot;')}"` : '';
+    const errorTip = j.lastError ? ` title="Posting failed"` : '';
 
     return `<tr${errorTip}>
       <td>
@@ -123,15 +124,30 @@ export const queueUI = {
     }, 3000);
   },
 
+  _shouldConfirm(key, message = 'Tap again to confirm') {
+    try {
+      const now = Date.now();
+      if (this._confirmMap && this._confirmMap[key] && (now - this._confirmMap[key] < 4000)) {
+        delete this._confirmMap[key];
+        return false; // proceed
+      }
+      this._confirmMap = this._confirmMap || {};
+      this._confirmMap[key] = now;
+      notify.warn(message);
+      setTimeout(() => { try { if (this._confirmMap[key] === now) delete this._confirmMap[key]; } catch {} }, 4000);
+      return true; // needs second tap
+    } catch { return false; }
+  },
+
   async cancel(id) {
-    if (!confirm('Cancel this scheduled post?')) return;
+    if (this._shouldConfirm(`cancel:${id}`, 'Tap again to cancel this post')) return;
     await jobQueue.cancel(id);
     notify.info('Post cancelled');
     this.refresh();
   },
 
   async remove(id) {
-    if (!confirm('Remove this post from history?')) return;
+    if (this._shouldConfirm(`remove:${id}`, 'Tap again to remove from history')) return;
     await jobQueue.remove(id);
     this.refresh();
   },
@@ -139,27 +155,27 @@ export const queueUI = {
   async retry(id) {
     notify.info('Retrying post...');
     // Fire-and-forget to immediately reflect RUNNING state and progress in UI
-    cronEngine.forceExecute(id).catch(err => notify.error(`Retry failed: ${err.message}`));
+    cronEngine.forceExecute(id).catch(() => notify.error('Retry failed'));
     // Quick refresh now, and again shortly to pick up RUNNING status
     this.refresh();
     setTimeout(() => this.refresh(), 600);
   },
 
   async postNow(id) {
-    if (!confirm('Post this immediately?')) return;
+    if (this._shouldConfirm(`postnow:${id}`, 'Tap again to post immediately')) return;
     notify.info('Posting now...');
-    cronEngine.forceExecute(id).catch(err => notify.error(`Post failed: ${err.message}`));
+    cronEngine.forceExecute(id).catch(() => notify.error('Post failed'));
     this.refresh();
     setTimeout(() => this.refresh(), 600);
   },
 
   async stop(id) {
-    if (!confirm('Stop this posting job?')) return;
+    if (this._shouldConfirm(`stop:${id}`, 'Tap again to stop this job')) return;
     try {
       await cronEngine.cancel(id);
       notify.info('Posting stopped');
     } catch (err) {
-      notify.error(`Failed to stop: ${err.message}`);
+      notify.error('Failed to stop');
     }
     this.refresh();
   },
@@ -167,16 +183,53 @@ export const queueUI = {
   async reschedule(id) {
     const job = this.jobs.find(j => j.id === id);
     if (!job) return;
+    let host = document.getElementById('reschedModal');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'overlay-modal';
+      host.id = 'reschedModal';
+      host.innerHTML = `
+        <div class="modal-box" style="max-width:420px">
+          <div class="modal-header">
+            <span class="modal-title">Edit Schedule</span>
+            <button class="modal-close" onclick="document.getElementById('reschedModal').classList.remove('show');window.app?._unlockBodyScroll?.()">✕</button>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Time</label>
+            <input type="datetime-local" class="form-input" id="reschedTime">
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+            <button class="btn btn-ghost" onclick="document.getElementById('reschedModal').classList.remove('show');window.app?._unlockBodyScroll?.()">Cancel</button>
+            <button class="btn btn-primary" id="reschedSave">Save</button>
+          </div>
+        </div>`;
+      document.body.appendChild(host);
+    }
     const current = new Date(job.scheduledAt);
-    const iso = current.toISOString().slice(0, 16);
-    const newTime = prompt('New schedule time (YYYY-MM-DDTHH:MM):', iso);
-    if (!newTime) return;
-    const d = new Date(newTime);
-    if (isNaN(d.getTime())) { notify.error('Invalid date/time'); return; }
-    if (d <= new Date()) { notify.error('Schedule time must be in the future'); return; }
-    await jobQueue.reschedule(id, d);
-    notify.success('Rescheduled');
-    this.refresh();
+    const iso = new Date(current.getTime() - current.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const input = document.getElementById('reschedTime');
+    if (input) input.value = iso;
+    const saveBtn = document.getElementById('reschedSave');
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        try {
+          const val = document.getElementById('reschedTime')?.value;
+          if (!val) { notify.warn('Choose a time'); return; }
+          const d = new Date(val);
+          if (isNaN(d.getTime())) { notify.error('Invalid date/time'); return; }
+          if (d <= new Date()) { notify.warn('Time must be in the future'); return; }
+          await jobQueue.reschedule(id, d);
+          notify.success('Rescheduled');
+          document.getElementById('reschedModal')?.classList.remove('show');
+          window.app?._unlockBodyScroll?.();
+          this.refresh();
+        } catch {
+          notify.error('Failed to reschedule');
+        }
+      };
+    }
+    document.getElementById('reschedModal')?.classList.add('show');
+    window.app?._lockBodyScroll?.();
   },
 };
 

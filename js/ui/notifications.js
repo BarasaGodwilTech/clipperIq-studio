@@ -57,6 +57,15 @@ function createToast(message, type = 'info', duration = 4000) {
   return toast;
 }
 
+function isDev() {
+  try {
+    const h = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : '';
+    return h.includes('localhost') || h === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
 export const notify = {
   show(message, type = 'info', duration = 4000) {
     const c = getContainer();
@@ -75,6 +84,10 @@ export const notify = {
   info(msg, duration = 4000)    { return this.show(msg, 'info', duration); },
 
   copyError(err) {
+    // In production, avoid exposing technical details to end users
+    if (!isDev()) {
+      return this.error('Something went wrong. Please try again.', 6000);
+    }
     const detail = err?.stack || err?.message || String(err);
     const toast = this.error(`${err.message} — <a href="#" onclick="navigator.clipboard.writeText(${JSON.stringify(detail)}).then(()=>this.textContent='Copied!');return false" style="color:#fca5a5;text-decoration:underline">Copy details</a>`, 8000);
     toast.querySelector('span:nth-child(2)').innerHTML = toast.querySelector('span:nth-child(2)').textContent;

@@ -31,6 +31,7 @@ class ClipperIQApp {
     this.compatOk = true;
     this._connecting = false;
     this._modalOpenCount = 0;
+    this._disconnectConfirmTs = {};
   }
 
   _lockBodyScroll() {
@@ -229,7 +230,7 @@ class ClipperIQApp {
       queueUI.refresh();
     };
     cronEngine.onJobFailed = (job, err) => {
-      notify.error(`Failed to post to ${job.platform}: ${err.message}`);
+      notify.error(`Failed to post to ${job.platform}`);
       queueUI.refresh();
     };
 
@@ -446,8 +447,8 @@ class ClipperIQApp {
           badge.textContent = count;
         }
       } catch (err) {
-        if (/already scheduled/i.test(err?.message || '')) notify.warn(err.message);
-        else notify.error(`Failed to schedule: ${err.message}`);
+        if (/already scheduled/i.test(err?.message || '')) notify.warn('Already scheduled for that time');
+        else notify.error('Failed to schedule. Please try again.');
       } finally {
         const submitBtn = form.querySelector('button[type="submit"], .btn.btn-primary');
         if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Schedule'; }
@@ -570,7 +571,7 @@ class ClipperIQApp {
       }
       if (handle) notify.success(`${platform} connected as ${handle}`); else notify.success(`${platform} connected!`);
     } catch (err) {
-      notify.error(`${platform} connection failed: ${err.message}`);
+      notify.error(`Couldn't connect to ${platform}. Please try again.`);
       console.error(`[Auth] ${platform} connect error:`, err);
     } finally {
       this._connecting = false;
@@ -622,8 +623,8 @@ class ClipperIQApp {
       document.getElementById('schedCaption').value = '';
       await this._updateQueueBadge();
     } catch (err) {
-      if (/already scheduled/i.test(err?.message || '')) notify.warn(err.message);
-      else notify.error(`Schedule failed: ${err.message}`);
+      if (/already scheduled/i.test(err?.message || '')) notify.warn('Already scheduled for that time');
+      else notify.error('Schedule failed. Please try again.');
     } finally {
       this._schedulingForm = false;
     }
@@ -648,7 +649,7 @@ class ClipperIQApp {
     const hasParts = byPart.some(c => c.partNumber != null);
     const ordered = hasParts ? byPart : [...clips].sort((a, b) => b.score - a.score);
     select.innerHTML = '<option value="">— Choose a clip —</option>' +
-      ordered.map(c => `<option value="${c.id}">${c.title || 'Clip #' + c.id} (score: ${c.score})</option>`)
+      ordered.map(c => `<option value="${c.id}">${c.title || 'Clip #' + c.id}</option>`)
              .join('');
 
     const now = new Date(Date.now() + 3600000);
@@ -773,7 +774,15 @@ class ClipperIQApp {
   }
 
   async disconnectPlatform(platform) {
-    if (!confirm(`Disconnect ${platform}? Scheduled posts will not be sent.`)) return;
+    const key = String(platform || '');
+    const now = Date.now();
+    if (!this._disconnectConfirmTs[key] || (now - this._disconnectConfirmTs[key]) > 4000) {
+      this._disconnectConfirmTs[key] = now;
+      notify.warn(`Tap again to disconnect ${platform}`);
+      setTimeout(() => { if (this._disconnectConfirmTs[key] === now) delete this._disconnectConfirmTs[key]; }, 4000);
+      return;
+    }
+    delete this._disconnectConfirmTs[key];
     if (platform === 'TikTok') await tiktokAPI.disconnect();
     else if (platform === 'Instagram') await instagramAPI.disconnect();
     else if (platform === 'YouTube') await youtubeAPI.disconnect();
@@ -803,7 +812,7 @@ app.init().catch(err => {
   console.error('[ClipperIQ] Init failed:', err);
   document.body.insertAdjacentHTML('afterbegin', `
     <div style="background:#ef4444;color:#fff;padding:12px 20px;font-size:13px;font-family:sans-serif">
-      App failed to initialize: ${err.message}. Check console for details.
+      Something went wrong while loading. Please refresh the page.
     </div>`);
 });
 

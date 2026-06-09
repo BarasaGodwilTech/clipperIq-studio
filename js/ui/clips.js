@@ -16,6 +16,7 @@ export const clipsUI = {
   clips: [],
   previewUrls: {},
   _seriesPlan: null,
+  _confirmDeleteTs: 0,
 
   async refresh() {
     try {
@@ -373,7 +374,7 @@ export const clipsUI = {
       this.renderGrid();
       notify.success('Clip updated');
     } catch (e) {
-      notify.error('Edit failed: ' + (e?.message || e));
+      notify.error('Edit failed');
     }
   },
 
@@ -597,7 +598,7 @@ export const clipsUI = {
       }
     } catch (e) {
       console.error('Save mix failed', e);
-      notify.error('Save failed: ' + (e?.message || e));
+      notify.error('Save failed');
     }
   },
 
@@ -693,7 +694,14 @@ export const clipsUI = {
   async deleteClip(clipId) {
     const clip = this.clips.find(c => c.id === clipId);
     if (!clip) return;
-    if (!confirm('Delete this clip? This cannot be undone.')) return;
+    const now = Date.now();
+    if (!this._confirmDeleteTs || (now - this._confirmDeleteTs) > 4000) {
+      this._confirmDeleteTs = now;
+      notify.warn('Tap delete again to confirm');
+      setTimeout(() => { if (this._confirmDeleteTs === now) this._confirmDeleteTs = 0; }, 4000);
+      return;
+    }
+    this._confirmDeleteTs = 0;
 
     await db.delete(STORES.CLIPS, clipId);
     await videoStore.deleteBlob(clip.blobId);
