@@ -1,6 +1,7 @@
 import { jobQueue, JOB_STATUS } from './jobQueue.js';
 import { retryHandler } from './retryHandler.js';
 import { videoStore } from '../storage/videoStore.js';
+import { db, STORES } from '../storage/db.js';
 
 const CHECK_INTERVAL_MS = 60 * 1000;
 
@@ -66,6 +67,28 @@ export class CronEngine {
 
   async executePost(post) {
     console.log(`[CronEngine] Executing post ${post.id} on ${post.platform}`);
+    // Enforce part order: delay this job if any earlier part from the same upload hasn't posted yet
+    try {
+      const clip = await db.get(STORES.CLIPS, post.clipId);
+      if (clip && clip.uploadId != null && clip.partNumber != null) {
+        const allClips = await db.getAll(STORES.CLIPS);
+        const earlier = allClips.filter(c => c.uploadId === clip.uploadId && c.partNumber != null && c.partNumber < clip.partNumber);
+        if (earlier.length > 0) {
+          const hist = await db.getAll(STORES.POSTED_HISTORY);
+          const postedIds = new Set(hist.filter(h => h.platform === post.platform).map(h => h.clipId));
+          const pendingEarlier = earlier.filter(c => !postedIds.has(c.id));
+          if (pendingEarlier.length > 0) {
+            const deferMs = 2 * 60 * 1000;
+            const next = new Date(Date.now() + deferMs);
+            await jobQueue.reschedule(post.id, next);
+            console.warn(`[CronEngine] Deferred job ${post.id} (Clip #${post.clipId}) until earlier parts post`);
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[CronEngine] Part-order check failed, proceeding:', e?.message || e);
+    }
     await jobQueue.markRunning(post.id);
 
     try {
