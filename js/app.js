@@ -1,6 +1,6 @@
 import { db, STORES } from './storage/db.js';
 import { authStore } from './storage/authStore.js';
-import { notify } from './ui/notifications.js';
+import { notify, confirmAction } from './ui/notifications.js';
 import { dashboard } from './ui/dashboard.js';
 import { uploadUI } from './ui/upload.js';
 import { clipsUI } from './ui/clips.js';
@@ -31,7 +31,6 @@ class ClipperIQApp {
     this.compatOk = true;
     this._connecting = false;
     this._modalOpenCount = 0;
-    this._disconnectConfirmTs = {};
   }
 
   _lockBodyScroll() {
@@ -764,6 +763,18 @@ class ClipperIQApp {
     queueUI.render();
   }
 
+  async confirmClearData() {
+    const ok = await confirmAction({
+      title: 'Clear all data?',
+      message: 'This will permanently delete all clips, uploads, and scheduled posts stored in this browser.',
+      confirmText: 'Yes, clear',
+      cancelText: 'No',
+      intent: 'danger',
+    });
+    if (!ok) return;
+    await this.clearData();
+  }
+
   _startQueueBadgeUpdater() {
     const update = async () => {
       const count = await jobQueue.getUpcomingCount();
@@ -781,15 +792,14 @@ class ClipperIQApp {
   }
 
   async disconnectPlatform(platform) {
-    const key = String(platform || '');
-    const now = Date.now();
-    if (!this._disconnectConfirmTs[key] || (now - this._disconnectConfirmTs[key]) > 4000) {
-      this._disconnectConfirmTs[key] = now;
-      notify.warn(`Tap again to disconnect ${platform}`);
-      setTimeout(() => { if (this._disconnectConfirmTs[key] === now) delete this._disconnectConfirmTs[key]; }, 4000);
-      return;
-    }
-    delete this._disconnectConfirmTs[key];
+    const ok = await confirmAction({
+      title: `Disconnect ${platform}?`,
+      message: `You are about to disconnect ${platform}. You can reconnect later from Accounts.`,
+      confirmText: 'Yes, disconnect',
+      cancelText: 'No',
+      intent: 'danger',
+    });
+    if (!ok) return;
     if (platform === 'TikTok') await tiktokAPI.disconnect();
     else if (platform === 'Instagram') await instagramAPI.disconnect();
     else if (platform === 'YouTube') await youtubeAPI.disconnect();

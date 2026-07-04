@@ -2,7 +2,7 @@ import { db, STORES } from '../storage/db.js';
 import { videoStore } from '../storage/videoStore.js';
 import { videoProcessor } from '../core/videoProcessor.js';
 import { jobQueue } from '../scheduler/jobQueue.js';
-import { notify } from './notifications.js';
+import { notify, confirmAction } from './notifications.js';
 import { authStore } from '../storage/authStore.js';
 import { getBackendBaseUrl } from '../core/config.js';
 
@@ -16,7 +16,6 @@ export const clipsUI = {
   clips: [],
   previewUrls: {},
   _seriesPlan: null,
-  _confirmDeleteTs: 0,
 
   async refresh() {
     try {
@@ -694,14 +693,14 @@ export const clipsUI = {
   async deleteClip(clipId) {
     const clip = this.clips.find(c => c.id === clipId);
     if (!clip) return;
-    const now = Date.now();
-    if (!this._confirmDeleteTs || (now - this._confirmDeleteTs) > 4000) {
-      this._confirmDeleteTs = now;
-      notify.warn('Tap delete again to confirm');
-      setTimeout(() => { if (this._confirmDeleteTs === now) this._confirmDeleteTs = 0; }, 4000);
-      return;
-    }
-    this._confirmDeleteTs = 0;
+    const ok = await confirmAction({
+      title: 'Delete this clip?',
+      message: `You are about to permanently delete Clip #${clip.id}. This cannot be undone.`,
+      confirmText: 'Yes, delete',
+      cancelText: 'No',
+      intent: 'danger',
+    });
+    if (!ok) return;
 
     await db.delete(STORES.CLIPS, clipId);
     await videoStore.deleteBlob(clip.blobId);

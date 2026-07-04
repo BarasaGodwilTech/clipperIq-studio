@@ -1,6 +1,6 @@
 import { jobQueue, JOB_STATUS } from '../scheduler/jobQueue.js';
 import { cronEngine } from '../scheduler/cronEngine.js';
-import { notify } from './notifications.js';
+import { notify, confirmAction } from './notifications.js';
 
 function formatCountdown(ms) {
   if (ms <= 0) return 'Now';
@@ -33,7 +33,6 @@ const platformColor = (p) => {
 export const queueUI = {
   jobs: [],
   countdownInterval: null,
-  _confirmMap: {},
 
   async refresh() {
     this.jobs = await jobQueue.getAll();
@@ -124,30 +123,29 @@ export const queueUI = {
     }, 3000);
   },
 
-  _shouldConfirm(key, message = 'Tap again to confirm') {
-    try {
-      const now = Date.now();
-      if (this._confirmMap && this._confirmMap[key] && (now - this._confirmMap[key] < 4000)) {
-        delete this._confirmMap[key];
-        return false; // proceed
-      }
-      this._confirmMap = this._confirmMap || {};
-      this._confirmMap[key] = now;
-      notify.warn(message);
-      setTimeout(() => { try { if (this._confirmMap[key] === now) delete this._confirmMap[key]; } catch {} }, 4000);
-      return true; // needs second tap
-    } catch { return false; }
-  },
-
   async cancel(id) {
-    if (this._shouldConfirm(`cancel:${id}`, 'Tap again to cancel this post')) return;
+    const ok = await confirmAction({
+      title: 'Cancel this post?',
+      message: 'This will cancel the scheduled post. It will not be published unless you reschedule it.',
+      confirmText: 'Yes, cancel',
+      cancelText: 'No',
+      intent: 'danger',
+    });
+    if (!ok) return;
     await jobQueue.cancel(id);
     notify.info('Post cancelled');
     this.refresh();
   },
 
   async remove(id) {
-    if (this._shouldConfirm(`remove:${id}`, 'Tap again to remove from history')) return;
+    const ok = await confirmAction({
+      title: 'Remove this item?',
+      message: 'This will remove the post from your queue/history view.',
+      confirmText: 'Yes, remove',
+      cancelText: 'No',
+      intent: 'danger',
+    });
+    if (!ok) return;
     await jobQueue.remove(id);
     this.refresh();
   },
@@ -163,7 +161,14 @@ export const queueUI = {
   },
 
   async postNow(id) {
-    if (this._shouldConfirm(`postnow:${id}`, 'Tap again to post immediately')) return;
+    const ok = await confirmAction({
+      title: 'Post immediately?',
+      message: 'This will attempt to publish the post right now.',
+      confirmText: 'Yes, post now',
+      cancelText: 'No',
+      intent: 'primary',
+    });
+    if (!ok) return;
     notify.info('Posting now...');
     const btn = document.activeElement && document.activeElement.tagName === 'BUTTON' ? document.activeElement : null;
     if (btn) btn.disabled = true;

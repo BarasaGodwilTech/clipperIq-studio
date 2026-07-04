@@ -1,6 +1,6 @@
 import { videoStore } from '../storage/videoStore.js';
 import { clipGenerator } from '../core/clipGenerator.js';
-import { notify } from './notifications.js';
+import { notify, confirmAction } from './notifications.js';
 import { db, STORES } from '../storage/db.js';
 
 function formatBytes(b) {
@@ -15,7 +15,6 @@ export const uploadUI = {
   isProcessing: false,
   _seriesIndex: null,
   _titleDebounce: null,
-  _cancelConfirmTs: 0,
 
   init() {
     const zone = document.getElementById('uploadZone');
@@ -63,16 +62,15 @@ export const uploadUI = {
     if (badge) badge.style.display = 'inline-flex';
   },
 
-  // Soft-cancel UI without browser popups. Double-tap to confirm close.
-  cancelOrClose() {
-    const now = Date.now();
-    if (!this._cancelConfirmTs || (now - this._cancelConfirmTs) > 4000) {
-      this._cancelConfirmTs = now;
-      notify.warn('Tap again to close the processing window');
-      setTimeout(() => { if (this._cancelConfirmTs === now) this._cancelConfirmTs = 0; }, 4000);
-      return;
-    }
-    this._cancelConfirmTs = 0;
+  async cancelOrClose() {
+    const ok = await confirmAction({
+      title: 'Close processing window?',
+      message: 'This will hide the progress window. Processing will continue in the background.',
+      confirmText: 'Yes, close',
+      cancelText: 'No',
+      intent: 'primary',
+    });
+    if (!ok) return;
     const modal = document.getElementById('procModal');
     if (modal) modal.classList.remove('show');
     window.app?._unlockBodyScroll?.();

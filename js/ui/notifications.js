@@ -66,6 +66,145 @@ function isDev() {
   }
 }
 
+let _confirmActive = false;
+let _confirmResolve = null;
+let _confirmPrevFocus = null;
+let _confirmKeyHandler = null;
+
+function _getConfirmEls() {
+  const overlay = document.getElementById('confirmModal');
+  if (!overlay) return null;
+  return {
+    overlay,
+    box: overlay.querySelector('.modal-box'),
+    title: document.getElementById('confirmModalTitle'),
+    desc: document.getElementById('confirmModalDesc'),
+    yes: document.getElementById('confirmModalYes'),
+    no: document.getElementById('confirmModalNo'),
+    close: document.getElementById('confirmModalClose'),
+  };
+}
+
+function _getFocusable(root) {
+  if (!root) return [];
+  const all = Array.from(root.querySelectorAll('button,[href],input,select,textarea,[tabindex]'));
+  return all.filter(el => {
+    const tabIndex = el.getAttribute('tabindex');
+    if (tabIndex === '-1') return false;
+    if (el.disabled) return false;
+    if (el.getAttribute('aria-disabled') === 'true') return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    return true;
+  });
+}
+
+function _closeConfirm(result) {
+  const els = _getConfirmEls();
+  if (!els || !_confirmActive) return;
+  _confirmActive = false;
+  try {
+    els.overlay.classList.remove('show');
+    els.overlay.setAttribute('aria-hidden', 'true');
+  } catch {}
+  try {
+    if (_confirmKeyHandler) document.removeEventListener('keydown', _confirmKeyHandler, true);
+  } catch {}
+  _confirmKeyHandler = null;
+  try { window.app?._unlockBodyScroll?.(); } catch {}
+  try { _confirmPrevFocus?.focus?.(); } catch {}
+  _confirmPrevFocus = null;
+  const resolve = _confirmResolve;
+  _confirmResolve = null;
+  try { resolve?.(result); } catch {}
+}
+
+export function confirmAction(opts = {}) {
+  const title = opts.title || 'Confirm';
+  const message = opts.message || '';
+  const confirmText = opts.confirmText || 'Yes';
+  const cancelText = opts.cancelText || 'No';
+  const intent = opts.intent || 'danger';
+
+  const els = _getConfirmEls();
+  if (!els) {
+    return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  }
+
+  if (_confirmActive) _closeConfirm(false);
+
+  _confirmActive = true;
+  _confirmPrevFocus = document.activeElement;
+
+  return new Promise((resolve) => {
+    _confirmResolve = resolve;
+
+    try {
+      els.title.textContent = title;
+      els.desc.textContent = message;
+      els.yes.textContent = confirmText;
+      els.no.textContent = cancelText;
+      els.yes.className = intent === 'danger' ? 'btn btn-danger' : 'btn btn-primary';
+      els.no.className = 'btn btn-ghost';
+    } catch {}
+
+    const onYes = (e) => { try { e?.preventDefault?.(); } catch {} _closeConfirm(true); };
+    const onNo = (e) => { try { e?.preventDefault?.(); } catch {} _closeConfirm(false); };
+    const onBackdrop = (e) => { if (e && e.target === els.overlay) onNo(e); };
+
+    try {
+      els.yes.onclick = onYes;
+      els.no.onclick = onNo;
+      if (els.close) els.close.onclick = onNo;
+      els.overlay.onclick = onBackdrop;
+    } catch {}
+
+    _confirmKeyHandler = (e) => {
+      if (!_confirmActive) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onNo(e);
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        onYes(e);
+        return;
+      }
+      if (e.key === 'Tab') {
+        const focusables = _getFocusable(els.box);
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey) {
+          if (active === first || active === els.box) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (active === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+
+    try { document.addEventListener('keydown', _confirmKeyHandler, true); } catch {}
+
+    try {
+      els.overlay.classList.add('show');
+      els.overlay.setAttribute('aria-hidden', 'false');
+    } catch {}
+    try { window.app?._lockBodyScroll?.(); } catch {}
+
+    setTimeout(() => {
+      try { els.no.focus(); } catch {}
+    }, 0);
+  });
+}
+
 export const notify = {
   show(message, type = 'info', duration = 4000) {
     const c = getContainer();

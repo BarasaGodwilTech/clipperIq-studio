@@ -685,7 +685,7 @@ if ('serviceWorker' in navigator) {
             <div><strong style="color:var(--text)">Processing:</strong> Private & secure — videos never leave your browser</div>
           </div>
           <div style="margin-top:16px;display:flex;gap:8px">
-            <button class="btn btn-danger btn-sm" onclick="if(confirm('Clear all clips and posts?')) window.app?.clearData()">Clear Data</button>
+            <button class="btn btn-danger btn-sm" onclick="window.app?.confirmClearData?.()">Clear Data</button>
           </div>
         </div>
       </div>
@@ -716,6 +716,21 @@ if ('serviceWorker' in navigator) {
     <div style="display:flex;gap:8px;margin-top:16px">
       <button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="window.uploadUI?.runInBackground?.()">Run in background</button>
       <button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="window.uploadUI?.cancelOrClose?.()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div class="overlay-modal" id="confirmModal" aria-hidden="true">
+  <div class="modal-box" style="max-width:440px" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle" aria-describedby="confirmModalDesc" tabindex="-1">
+    <div class="modal-header">
+      <span class="modal-title" id="confirmModalTitle">Confirm</span>
+      <button class="modal-close" id="confirmModalClose" aria-label="Close confirmation dialog">✕</button>
+    </div>
+    <div id="confirmModalDesc" style="font-size:13px;color:var(--muted);line-height:1.5"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap">
+      <button class="btn btn-ghost" id="confirmModalNo">No</button>
+      <button class="btn btn-danger" id="confirmModalYes">Yes</button>
     </div>
   </div>
 </div>
