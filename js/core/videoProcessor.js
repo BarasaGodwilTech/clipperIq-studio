@@ -529,7 +529,7 @@ export class VideoProcessor {
       const blobURL = URL.createObjectURL(videoBlob);
       const video = document.createElement('video');
       video.preload = 'auto';
-      video.volume = 0; // routed through WebAudio context for monitoring
+      video.volume = 1.0; // routed through WebAudio context for monitoring
       video.muted = true; // never audibly play during recording
       video.playsInline = true;
       video.setAttribute('playsinline', '');
@@ -687,7 +687,15 @@ export class VideoProcessor {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const dest = audioCtx.createMediaStreamDestination();
 
-            const vSource = audioCtx.createMediaElementSource(video);
+            let vSource = null;
+            const captureFn = video.captureStream?.bind(video) || video.mozCaptureStream?.bind(video);
+            if (captureFn) {
+              try { video.volume = 1.0; video.muted = true; } catch {}
+              const videoRawStream = captureFn();
+              vSource = audioCtx.createMediaStreamSource(videoRawStream);
+            } else {
+              vSource = audioCtx.createMediaElementSource(video);
+            }
             const vGain = audioCtx.createGain();
             vGain.gain.value = 1.0;
             vSource.connect(vGain).connect(dest);
@@ -708,7 +716,7 @@ export class VideoProcessor {
             const canvasStream = canvas.captureStream(30);
             const captureFn = video.captureStream?.bind(video) || video.mozCaptureStream?.bind(video);
             if (!captureFn) { finish(new Error('captureStream API not available in this browser')); return; }
-            try { video.volume = 0.0; video.muted = true; } catch {}
+            try { video.volume = 1.0; video.muted = true; } catch {}
             const videoRawStream = captureFn();
             combined = new MediaStream([
               ...canvasStream.getVideoTracks(),
