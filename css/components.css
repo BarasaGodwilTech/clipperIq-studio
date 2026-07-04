@@ -248,7 +248,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); background: transp
   padding: 20px;
   overflow-y: auto;
 }
-.overlay-modal.show { display: flex; }
+.overlay-modal.show { display: flex; } 
 .modal-box {
   background: var(--bg2); border: 1px solid var(--border2);
   border-radius: var(--radius-xl); padding: 28px; width: 480px; max-width: 100%;
