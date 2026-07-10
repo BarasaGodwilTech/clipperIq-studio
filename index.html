@@ -6,6 +6,8 @@
 <meta name="theme-color" content="#7c5cfc">
 <title>ClipperIQ Studio — Creator Automation Studio</title>
 <link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/jpeg" href="/logo1024x1024.jpg">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&display=swap" rel="stylesheet">
@@ -45,6 +47,7 @@ if ('serviceWorker' in navigator) {
 
 <aside class="sidebar" id="appSidebar">
   <div class="logo">
+    <img src="/logo1024x1024.jpg" alt="ClipperIQ Logo" style="width: 64px; height: 64px; border-radius: 12px; margin-bottom: 12px;">
     <div class="logo-mark">ClipperIQ</div>
     <div class="logo-sub">Creator Automation Studio</div>
   </div>
@@ -95,6 +98,10 @@ if ('serviceWorker' in navigator) {
         <div class="user-name">ClipperIQ Studio</div>
         <div class="user-plan" id="schedulerStatus">Scheduler active</div>
       </div>
+    </div>
+    <div style="margin-top: 16px; padding: 0 16px; display: flex; flex-direction: column; gap: 8px;">
+      <a href="/terms.html" style="color: var(--muted); text-decoration: none; font-size: 12px;">Terms of Service</a>
+      <a href="/privacy.html" style="color: var(--muted); text-decoration: none; font-size: 12px;">Privacy Policy</a>
     </div>
   </div>
 </aside>
