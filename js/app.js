@@ -226,7 +226,11 @@ class ClipperIQApp {
     cronEngine.registerPlatform('youtube', youtubeAPI);
 
     cronEngine.onJobComplete = (job, result) => {
-      notify.success(`Posted to ${job.platform} successfully!`);
+      if (job.platform === 'TikTok' && result?.status === 'SEND_TO_USER_INBOX') {
+        notify.success('Sent to TikTok inbox. Open TikTok to review and post it.');
+      } else {
+        notify.success(`Posted to ${job.platform} successfully!`);
+      }
       queueUI.refresh();
     };
     cronEngine.onJobFailed = (job, err) => {
@@ -829,15 +833,17 @@ class ClipperIQApp {
         histEl.innerHTML = `<table class="data-table"><thead><tr><th>Clip</th><th>Platform</th><th>Posted At</th><th>Result</th></tr></thead><tbody>${
           recent.map(p => {
             let link = '';
+            let label = '✓ Posted';
             try {
               const r = JSON.parse(p.result||'{}');
+              if (p.platform === 'TikTok' && r.status === 'SEND_TO_USER_INBOX') label = 'Inbox Review';
               if (r.url) link = ` <a href="${r.url}" target="_blank" rel="noopener" title="Open" style="color:var(--muted)">↗</a>`;
             } catch {}
             return `<tr>
               <td>Clip #${p.clipId}</td>
               <td style="color:${colors[p.platform]||'var(--accent)'};font-weight:600">${p.platform}</td>
               <td style="color:var(--muted);font-size:12px">${new Date(p.postedAt || p.scheduledAt).toLocaleString()}</td>
-              <td><span class="badge badge-posted">✓ Posted</span>${link}</td>
+              <td><span class="badge badge-posted">${label}</span>${link}</td>
             </tr>`;
           }).join('')
         }</tbody></table>`;

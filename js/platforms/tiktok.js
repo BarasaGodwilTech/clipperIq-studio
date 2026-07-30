@@ -7,6 +7,7 @@ const TIKTOK_AUTH_URL = 'https://www.tiktok.com/v2/auth/authorize/';
 const TIKTOK_TOKEN_URL = 'https://open.tiktokapis.com/v2/oauth/token/';
 const TIKTOK_REVOKE_URL = 'https://open.tiktokapis.com/v2/oauth/revoke/';
 const TIKTOK_VIDEO_INIT_URL = 'https://open.tiktokapis.com/v2/post/publish/video/init/';
+const TIKTOK_INBOX_VIDEO_INIT_URL = 'https://open.tiktokapis.com/v2/post/publish/inbox/video/init/';
 const TIKTOK_VIDEO_STATUS_URL = 'https://open.tiktokapis.com/v2/post/publish/status/fetch/';
 const TIKTOK_USER_URL = 'https://open.tiktokapis.com/v2/user/info/';
 
@@ -214,6 +215,7 @@ export class TikTokAPI {
       allowStitch = true,
       allowPromotion = true,
       brandedContent = false,
+      publishMode = 'auto',
     } = options;
 
     // Map UI values to TikTok enums for privacy_level (backward compatible)
@@ -227,9 +229,9 @@ export class TikTokAPI {
     };
     let privacyLevel = privacyMap[privacy] || 'PUBLIC_TO_EVERYONE';
 
-    // Check cached unaudited status — skip the doomed PUBLIC request entirely
+    // If we still attempt direct post while unaudited, keep it private.
     const cachedUnaudited = await db.getSetting('tiktok_unaudited');
-    if (cachedUnaudited && privacyLevel !== 'SELF_ONLY') {
+    if (cachedUnaudited && publishMode !== 'draft' && privacyLevel !== 'SELF_ONLY') {
       console.warn('[TikTok] App is unaudited (cached) — forcing privacy_level=SELF_ONLY');
       privacyLevel = 'SELF_ONLY';
     }
@@ -251,8 +253,8 @@ export class TikTokAPI {
     const base = await getBackendBaseUrl();
     if (!base) throw new Error('Backend base URL not configured');
 
-    // Build init request body with both source_info AND post_info
-    const buildInitBody = (pLevel) => ({
+    // Direct post includes post_info; inbox upload sends the video to TikTok's inbox for manual review/posting.
+    const buildDirectInitBody = (pLevel) => ({
       post_info: {
         title: (caption || '').slice(0, 150) || 'New video',
         privacy_level: pLevel,
@@ -269,10 +271,37 @@ export class TikTokAPI {
         total_chunk_count: totalChunks,
       },
     });
+    const buildInboxInitBody = () => ({
+      source_info: {
+        source: 'FILE_UPLOAD',
+        video_size: videoBlob.size,
+        chunk_size: CHUNK_SIZE,
+        total_chunk_count: totalChunks,
+      },
+    });
+    const initUpload = async (mode, body) => {
+      const url = mode === 'inbox' ? `${base}/api/tiktok/inbox/init` : `${base}/api/tiktok/init`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token.access_token}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        signal: abortSignal || undefined,
+        body: JSON.stringify(body),
+      });
+      let data = {};
+      try { data = await res.json(); } catch {}
+      return { res, data };
+    };
 
-    // Try init with requested privacy; auto-fallback to SELF_ONLY for unaudited apps
-    let initBody = buildInitBody(privacyLevel);
+    // Prefer inbox mode automatically once we know this app is unaudited.
+    const preferInbox = publishMode === 'draft' || (publishMode === 'auto' && !!cachedUnaudited);
+    let activeMode = preferInbox ? 'inbox' : 'direct';
+    let initBody = activeMode === 'inbox' ? buildInboxInitBody() : buildDirectInitBody(privacyLevel);
     console.log('[TikTok] Init upload:', {
+      mode: activeMode,
       videoSize: videoBlob.size,
       chunkSize: CHUNK_SIZE,
       totalChunks,
@@ -284,20 +313,8 @@ export class TikTokAPI {
       allowPromotion,
       brandContentToggle: !!brandedContent,
     });
-
-    let initRes = await fetch(`${base}/api/tiktok/init`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token.access_token}`,
-        'Content-Type': 'application/json; charset=UTF-8',
-        'ngrok-skip-browser-warning': 'true',
-      },
-      signal: abortSignal || undefined,
-      body: JSON.stringify(initBody),
-    });
-    let initData = {};
-    try { initData = await initRes.json(); } catch {}
-    console.log('[TikTok] Init response:', initRes.status, JSON.stringify(initData).slice(0, 500));
+    let { res: initRes, data: initData } = await initUpload(activeMode, initBody);
+    console.log(`[TikTok] Init response (${activeMode}):`, initRes.status, JSON.stringify(initData).slice(0, 500));
 
     // Auto-fallback: unaudited TikTok apps can only post SELF_ONLY (private)
     // Check both error.code and error.message for robustness across API versions
@@ -306,28 +323,20 @@ export class TikTokAPI {
     const isUnauditedError = errCode === 'unaudited_client_can_only_post_to_private_accounts'
       || errMsg.includes('unaudited_client_can_only_post_to_private_accounts')
       || errMsg.includes('only post to private');
-    if (isUnauditedError && privacyLevel !== 'SELF_ONLY') {
-      console.warn('[TikTok] App is unaudited — retrying with privacy_level=SELF_ONLY');
-      // Cache unaudited status so future posts skip the doomed request
+    if (activeMode === 'direct' && isUnauditedError) {
+      console.warn('[TikTok] App is unaudited — switching to inbox upload flow');
       try { await db.setSetting('tiktok_unaudited', true); } catch {}
-      privacyLevel = 'SELF_ONLY';
-      initBody = buildInitBody('SELF_ONLY');
-      initRes = await fetch(`${base}/api/tiktok/init`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token.access_token}`,
-          'Content-Type': 'application/json; charset=UTF-8',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        signal: abortSignal || undefined,
-        body: JSON.stringify(initBody),
-      });
-      try { initData = await initRes.json(); } catch {}
-      console.log('[TikTok] Init retry (SELF_ONLY) response:', initRes.status, JSON.stringify(initData).slice(0, 500));
+      activeMode = 'inbox';
+      initBody = buildInboxInitBody();
+      ({ res: initRes, data: initData } = await initUpload(activeMode, initBody));
+      console.log(`[TikTok] Init retry (${activeMode}) response:`, initRes.status, JSON.stringify(initData).slice(0, 500));
     }
 
     if (!initRes.ok) {
-      const baseMsg = (initData?.error?.message) || initData?.error?.code || initRes.statusText || 'TikTok init failed';
+      let baseMsg = (initData?.error?.message) || initData?.error?.code || initRes.statusText || 'TikTok init failed';
+      if (activeMode === 'inbox' && /scope_not_authorized|video\.upload/i.test(baseMsg)) {
+        baseMsg = 'TikTok inbox upload is not authorized for this account yet. Reconnect TikTok and grant the video.upload scope.';
+      }
       // Provide a clear, actionable error for unaudited apps
       const statusTag = (initRes.status === 401 || initRes.status === 403) ? 'Unauthorized' : 'Error';
       throw new Error(`${statusTag}: ${baseMsg}`);
@@ -412,12 +421,12 @@ export class TikTokAPI {
     if (onProgress) onProgress(90);
 
     if (onProgress) onProgress(95);
-    const res = await this.pollPublishStatus(token.access_token, publish_id, 40, abortSignal);
+    const res = await this.pollPublishStatus(token.access_token, publish_id, 40, abortSignal, activeMode);
     if (onProgress) onProgress(100);
     return res;
   }
 
-  async pollPublishStatus(accessToken, publishId, maxAttempts = 60, abortSignal = null) {
+  async pollPublishStatus(accessToken, publishId, maxAttempts = 60, abortSignal = null, publishMode = 'direct') {
     const start = Date.now();
     const budgetMs = 600000; // 10 minutes
     for (let i = 0; i < maxAttempts; i++) {
@@ -440,6 +449,16 @@ export class TikTokAPI {
       const data = await res.json().catch(() => ({}));
       const status = data.data?.status;
       console.log(`[TikTok] Status poll #${i + 1}: ${status || 'unknown'}`, JSON.stringify(data).slice(0, 200));
+      if (status === 'SEND_TO_USER_INBOX') {
+        return {
+          publishId,
+          status,
+          deliveryMode: 'inbox',
+          requiresUserAction: true,
+          message: 'Video sent to TikTok inbox. Open TikTok and finish the post there.',
+          data,
+        };
+      }
       if (status === 'PUBLISH_COMPLETE') {
         const videoId = data.data?.video_id || data.data?.publish_video_id || null;
         let url = null;
@@ -452,7 +471,7 @@ export class TikTokAPI {
             }
           } catch {}
         }
-        return { publishId, status, videoId, url, data };
+        return { publishId, status, videoId, url, deliveryMode: publishMode, data };
       }
       if (status === 'FAILED') {
         const failCode = data.data?.fail_code;

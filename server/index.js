@@ -687,6 +687,25 @@ app.post('/api/tiktok/init', async (req, res) => {
   }
 });
 
+app.post('/api/tiktok/inbox/init', async (req, res) => {
+  try {
+    const auth = req.header('Authorization');
+    if (!auth) return res.status(401).json({ error: 'Missing Authorization' });
+    console.log('[Backend] TikTok inbox init request:', JSON.stringify(req.body || {}).slice(0, 500));
+    const r = await fetchWithTimeout('https://open.tiktokapis.com/v2/post/publish/inbox/video/init/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8', Authorization: auth },
+      body: JSON.stringify(req.body || {}),
+    }, 30000);
+    const data = await r.json().catch(() => ({}));
+    console.log('[Backend] TikTok inbox init response:', r.status, JSON.stringify(data).slice(0, 500));
+    res.status(r.status).json(data);
+  } catch (e) {
+    console.error('[Backend] TikTok inbox init error:', e);
+    res.status(500).json({ error: 'TikTok inbox init failed' });
+  }
+});
+
 app.post('/api/tiktok/token', async (req, res) => {
   try {
     const {
