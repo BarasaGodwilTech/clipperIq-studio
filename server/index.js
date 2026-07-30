@@ -3,11 +3,48 @@ const cors = require('cors');
 const ytDlp = require('youtube-dl-exec');
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 // Use node-fetch instead of Node.js built-in fetch (undici) to avoid
 // ETIMEDOUT / ECONNRESET issues with certain APIs (e.g. TikTok).
 const fetch = require('node-fetch');
 
 const app = express();
+app.set('trust proxy', true);
+
+// #region debug-point clips-generation-error-backend
+const DBG_SESSION_ID = 'clips-generation-error';
+let _dbgUrl = null;
+function getDbgUrl() {
+  if (_dbgUrl) return _dbgUrl;
+  try {
+    const envPath = path.join(process.cwd(), '.dbg', `${DBG_SESSION_ID}.env`);
+    const txt = fs.readFileSync(envPath, 'utf8');
+    const m = txt.match(/^DEBUG_SERVER_URL=(.+)$/m);
+    if (m && m[1]) {
+      _dbgUrl = String(m[1]).trim();
+      return _dbgUrl;
+    }
+  } catch {}
+  _dbgUrl = 'http://127.0.0.1:7778/event';
+  return _dbgUrl;
+}
+async function dbgReport(hypothesisId, msg, data = {}) {
+  try {
+    const url = getDbgUrl();
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: DBG_SESSION_ID,
+        runId: 'pre-fix',
+        hypothesisId,
+        msg,
+        data,
+      }),
+    });
+  } catch {}
+}
+// #endregion debug-point clips-generation-error-backend
 
 // CORS: allow all origins with required headers and methods, including preflight
 const corsOptions = {
@@ -79,6 +116,436 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 }
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '1y', immutable: true }));
 
+const CLOUD_WORK_DIR = path.join(__dirname, 'cloud_work');
+const CLOUD_IN_DIR = path.join(CLOUD_WORK_DIR, 'in');
+const CLOUD_OUT_DIR = path.join(UPLOAD_DIR, 'cloud');
+for (const dir of [CLOUD_WORK_DIR, CLOUD_IN_DIR, CLOUD_OUT_DIR]) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+const cloudUploads = new Map();
+const cloudJobs = new Map();
+
+function makeId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function safeExtFromName(name) {
+  const ext = path.extname(String(name || '')).toLowerCase();
+  if (!ext || ext.length > 8) return '.mp4';
+  if (!/^\.[a-z0-9]+$/.test(ext)) return '.mp4';
+  return ext;
+}
+
+function getExternalBaseUrl(req) {
+  const proto = String(req.header('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
+  const host = String(req.header('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+  return `${proto}://${host}`;
+}
+
+function runProcess(cmd, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { windowsHide: true, ...opts });
+    let stdout = '';
+    let stderr = '';
+    p.stdout?.on('data', (d) => { stdout += d.toString(); });
+    p.stderr?.on('data', (d) => { stderr += d.toString(); });
+    p.on('error', reject);
+    p.on('close', (code) => {
+      if (code === 0) return resolve({ stdout, stderr });
+      const err = new Error(`${cmd} exited with code ${code}`);
+      err.code = code;
+      err.stdout = stdout;
+      err.stderr = stderr;
+      reject(err);
+    });
+  });
+}
+
+async function getDurationSeconds(filePath) {
+  const { stdout } = await runProcess('ffprobe', [
+    '-v', 'error',
+    '-show_entries', 'format=duration',
+    '-of', 'default=noprint_wrappers=1:nokey=1',
+    filePath,
+  ]);
+  const v = parseFloat(String(stdout || '').trim());
+  return Number.isFinite(v) ? v : 0;
+}
+
+function aspectRatioToNumber(ar) {
+  const s = String(ar || '').trim();
+  if (s === '9:16') return 9 / 16;
+  if (s === '16:9') return 16 / 9;
+  if (s === '1:1') return 1;
+  if (s === '4:5') return 4 / 5;
+  return null;
+}
+
+function buildCropFilter(aspectRatio) {
+  const r = aspectRatioToNumber(aspectRatio);
+  if (!r) return null;
+  const rr = r.toFixed(10);
+  return `crop=w='if(gte(iw/ih,${rr}),ih*${rr},iw)':h='if(gte(iw/ih,${rr}),ih,iw/${rr})':x='(iw-ow)/2':y='(ih-oh)/2'`;
+}
+
+function buildOverlayFilter(overlayFormat, partNumber) {
+  if (String(overlayFormat || '') !== 'part-text') return null;
+  const n = Number.isFinite(partNumber) ? partNumber : null;
+  if (!n) return null;
+  return `drawtext=text='PART ${n}':x=(w-text_w)/2:y=h*0.06:fontcolor=white:fontsize=h*0.065:box=1:boxcolor=black@0.35:boxborderw=14`;
+}
+
+app.get('/api/cloud/health', async (req, res) => {
+  try {
+    await runProcess('ffmpeg', ['-version']);
+    await runProcess('ffprobe', ['-version']);
+    res.json({ ok: true });
+  } catch (e) {
+    await dbgReport('E', 'backend: /api/cloud/health failed', { message: e?.message || String(e), stack: e?.stack || null });
+    res.status(500).json({ ok: false, error: e?.message || 'ffmpeg not available' });
+  }
+});
+
+app.post('/api/cloud/upload/init', async (req, res) => {
+  try {
+    const { name = '', size, type = '' } = req.body || {};
+    const totalSize = Number(size);
+    if (!Number.isFinite(totalSize) || totalSize <= 0) {
+      return res.status(400).json({ error: 'Missing or invalid size' });
+    }
+    const uploadId = makeId('u');
+    const ext = safeExtFromName(name);
+    const filePath = path.join(CLOUD_IN_DIR, `${uploadId}${ext}`);
+    await fs.promises.writeFile(filePath, Buffer.alloc(0));
+    cloudUploads.set(uploadId, {
+      uploadId,
+      filePath,
+      name: String(name || ''),
+      size: totalSize,
+      type: String(type || ''),
+      received: 0,
+      createdAt: Date.now(),
+    });
+    res.json({ uploadId });
+  } catch (e) {
+    await dbgReport('B', 'backend: /api/cloud/upload/init error', {
+      message: e?.message || String(e),
+      stack: e?.stack || null,
+      hasBody: !!req.body,
+    });
+    console.error('[Backend] cloud upload init error:', e);
+    res.status(500).json({ error: 'Cloud upload init failed' });
+  }
+});
+
+app.put('/api/cloud/upload', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
+  try {
+    const uploadId = String(req.query.uploadId || '');
+    const info = cloudUploads.get(uploadId);
+    if (!uploadId || !info) return res.status(400).json({ error: 'Invalid uploadId' });
+    const range = String(req.header('Content-Range') || '');
+    const m = range.match(/bytes\s+(\d+)-(\d+)\/(\d+|\*)/i);
+    if (!m) return res.status(400).json({ error: 'Missing or invalid Content-Range' });
+    const start = Number(m[1]);
+    const end = Number(m[2]);
+    const total = m[3] === '*' ? info.size : Number(m[3]);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start) {
+      return res.status(400).json({ error: 'Invalid range values' });
+    }
+    if (!req.body || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ error: 'Missing body' });
+    }
+    const expectedLen = end - start + 1;
+    if (req.body.length !== expectedLen) {
+      return res.status(400).json({ error: 'Body length does not match Content-Range' });
+    }
+    const fh = await fs.promises.open(info.filePath, 'r+');
+    try {
+      await fh.write(req.body, 0, req.body.length, start);
+    } finally {
+      await fh.close();
+    }
+    info.received = Math.max(info.received, end + 1);
+    if (Number.isFinite(total) && total > 0) info.size = total;
+    const done = info.received >= info.size;
+    res.json({ uploadId, received: info.received, size: info.size, done });
+  } catch (e) {
+    await dbgReport('B', 'backend: /api/cloud/upload chunk error', {
+      message: e?.message || String(e),
+      stack: e?.stack || null,
+      uploadId: String(req.query.uploadId || ''),
+      contentRange: String(req.header('Content-Range') || ''),
+      contentLength: Number(req.header('Content-Length') || 0) || null,
+    });
+    console.error('[Backend] cloud upload chunk error:', e);
+    res.status(500).json({ error: 'Cloud upload failed' });
+  }
+});
+
+app.post('/api/cloud/info', async (req, res) => {
+  try {
+    const { uploadId } = req.body || {};
+    const info = cloudUploads.get(String(uploadId || ''));
+    if (!info) return res.status(400).json({ error: 'Invalid uploadId' });
+    if (info.received < info.size) return res.status(409).json({ error: 'Upload incomplete' });
+    const duration = await getDurationSeconds(info.filePath);
+    res.json({ duration });
+  } catch (e) {
+    await dbgReport('E', 'backend: /api/cloud/info error', {
+      message: e?.message || String(e),
+      stack: e?.stack || null,
+      uploadId: req?.body?.uploadId || null,
+    });
+    console.error('[Backend] cloud info error:', e);
+    res.status(500).json({ error: 'Cloud info failed' });
+  }
+});
+
+app.post('/api/cloud/analyze', async (req, res) => {
+  try {
+    const { uploadId, maxClips = 8, targetDuration = 30 } = req.body || {};
+    const info = cloudUploads.get(String(uploadId || ''));
+    if (!info) return res.status(400).json({ error: 'Invalid uploadId' });
+    if (info.received < info.size) return res.status(409).json({ error: 'Upload incomplete' });
+
+    const duration = await getDurationSeconds(info.filePath);
+    const dur = Math.max(1, Number(targetDuration) || 30);
+
+    let raw = '';
+    try {
+      const r = await runProcess('ffmpeg', [
+        '-hide_banner',
+        '-i', info.filePath,
+        '-vf', `select='gt(scene,0.35)',metadata=print`,
+        '-an',
+        '-f', 'null',
+        '-',
+      ]);
+      raw = `${r.stdout || ''}\n${r.stderr || ''}`;
+    } catch (e) {
+      raw = `${e.stdout || ''}\n${e.stderr || ''}`;
+    }
+
+    const lines = raw.split(/\r?\n/);
+    const scenePoints = [];
+    let lastPts = null;
+    for (const line of lines) {
+      const pts = line.match(/pts_time:([0-9.]+)/i);
+      if (pts) {
+        lastPts = parseFloat(pts[1]);
+        continue;
+      }
+      const sc = line.match(/lavfi\.scene_score=([0-9.]+)/i);
+      if (sc && Number.isFinite(lastPts)) {
+        const s = parseFloat(sc[1]);
+        scenePoints.push({ timestamp: lastPts, sceneScore: Number.isFinite(s) ? s : 0 });
+        lastPts = null;
+      }
+    }
+
+    const candidatesMap = new Map();
+    const add = (start, clipDur, sceneScore = 0) => {
+      const key = `${Math.round(start * 2) / 2}_${clipDur}`;
+      if (!candidatesMap.has(key)) candidatesMap.set(key, { start, duration: clipDur, sceneScore, sources: ['scene'] });
+      else candidatesMap.get(key).sceneScore = Math.max(candidatesMap.get(key).sceneScore || 0, sceneScore);
+    };
+
+    for (const p of scenePoints) {
+      const start = Math.max(0, (p.timestamp || 0) - 1.5);
+      if (start + dur <= duration) add(start, dur, p.sceneScore || 0);
+    }
+
+    const step = Math.max(30, duration / (Math.max(1, Number(maxClips) || 8) * 2));
+    for (let t = 0; t + dur <= duration; t += step) {
+      const start = Math.max(0, t);
+      add(start, dur, 0);
+    }
+
+    const scored = Array.from(candidatesMap.values()).map((c) => {
+      const posScore = duration > 0 ? (1 - Math.abs((c.start + c.duration / 2) / duration - 0.5) * 0.3) : 0;
+      const durationScore = c.duration === 30 ? 1 : c.duration === 60 ? 0.85 : 0.75;
+      const sceneScore = Math.max(0, Math.min(1, Number(c.sceneScore) || 0));
+      const totalScore = Math.round((sceneScore * 0.6 + posScore * 0.3 + durationScore * 0.1) * 100);
+      return { ...c, audioScore: 0, posScore, sceneScore, totalScore };
+    });
+
+    scored.sort((a, b) => b.totalScore - a.totalScore);
+    const limit = Math.max(1, Math.min(50, Number(maxClips) ? Number(maxClips) * 3 : 24));
+    res.json({ duration, candidates: scored.slice(0, limit) });
+  } catch (e) {
+    await dbgReport('E', 'backend: /api/cloud/analyze error', {
+      message: e?.message || String(e),
+      stack: e?.stack || null,
+      uploadId: req?.body?.uploadId || null,
+      maxClips: req?.body?.maxClips || null,
+      targetDuration: req?.body?.targetDuration || null,
+    });
+    console.error('[Backend] cloud analyze error:', e);
+    res.status(500).json({ error: 'Cloud analyze failed' });
+  }
+});
+
+async function runCloudJob(jobId) {
+  const job = cloudJobs.get(jobId);
+  if (!job) return;
+  const info = cloudUploads.get(job.uploadId);
+  if (!info) {
+    job.status = 'failed';
+    job.error = 'Upload not found';
+    return;
+  }
+
+  job.status = 'running';
+  const outDir = job.outDir;
+  const candidates = Array.isArray(job.candidates) ? job.candidates : [];
+  const total = candidates.length;
+
+  for (let i = 0; i < total; i++) {
+    const c = candidates[i];
+    const start = Number(c.start) || 0;
+    const clipDur = Number(c.duration) || 0;
+    if (clipDur <= 0.25) continue;
+
+    const outName = `clip_${String(i + 1).padStart(2, '0')}.mp4`;
+    const outPath = path.join(outDir, outName);
+
+    const crop = buildCropFilter(job.aspectRatio);
+    const ov = buildOverlayFilter(job.overlayFormat, Number.isFinite(job.seriesStartPart) ? job.seriesStartPart + i : null);
+    const vfParts = [crop, ov].filter(Boolean);
+    const vf = vfParts.length ? vfParts.join(',') : null;
+
+    const needReencode = !!job.reEncode || !!vf;
+    const args = [
+      '-hide_banner',
+      '-ss', String(start),
+      '-i', info.filePath,
+      '-t', String(clipDur),
+    ];
+    if (needReencode) {
+      if (vf) args.push('-vf', vf);
+      args.push(
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '20',
+        '-c:a', 'aac',
+        '-b:a', '160k',
+        '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
+        '-movflags', '+faststart',
+        '-y',
+        outPath
+      );
+    } else {
+      args.push(
+        '-c', 'copy',
+        '-avoid_negative_ts', 'make_zero',
+        '-movflags', '+faststart',
+        '-y',
+        outPath
+      );
+    }
+
+    await runProcess('ffmpeg', args);
+
+    const urlPath = `/uploads/cloud/${encodeURIComponent(jobId)}/${encodeURIComponent(outName)}`;
+    job.clips.push({
+      url: `${job.baseUrl}${urlPath}`,
+      startTime: start,
+      duration: clipDur,
+      index: i,
+      score: Number(c.totalScore) || 0,
+      audioScore: Number(c.audioScore) || 0,
+      sceneScore: Number(c.sceneScore) || 0,
+      sources: Array.isArray(c.sources) ? c.sources : (c.sources ? [c.sources] : []),
+    });
+    job.progress = Math.round(((i + 1) / total) * 100);
+  }
+
+  job.status = 'done';
+  job.progress = 100;
+}
+
+app.post('/api/cloud/jobs', async (req, res) => {
+  try {
+    const {
+      uploadId,
+      candidates = [],
+      reEncode = false,
+      aspectRatio = 'original',
+      overlayFormat = 'none',
+      seriesStartPart = 1,
+    } = req.body || {};
+
+    const info = cloudUploads.get(String(uploadId || ''));
+    if (!info) return res.status(400).json({ error: 'Invalid uploadId' });
+    if (info.received < info.size) return res.status(409).json({ error: 'Upload incomplete' });
+
+    const jobId = makeId('job');
+    const outDir = path.join(CLOUD_OUT_DIR, jobId);
+    await fs.promises.mkdir(outDir, { recursive: true });
+    const baseUrl = getExternalBaseUrl(req);
+    const job = {
+      jobId,
+      uploadId: String(uploadId),
+      status: 'queued',
+      progress: 0,
+      error: null,
+      clips: [],
+      createdAt: Date.now(),
+      baseUrl,
+      outDir,
+      candidates: Array.isArray(candidates) ? candidates : [],
+      reEncode: !!reEncode,
+      aspectRatio: String(aspectRatio || 'original'),
+      overlayFormat: String(overlayFormat || 'none'),
+      seriesStartPart: Number(seriesStartPart) || 1,
+    };
+    cloudJobs.set(jobId, job);
+    setTimeout(() => {
+      runCloudJob(jobId).catch((e) => {
+        const j = cloudJobs.get(jobId);
+        if (j) {
+          j.status = 'failed';
+          j.error = e?.message || 'Job failed';
+        }
+        dbgReport('E', 'backend: runCloudJob failed', { jobId, message: e?.message || String(e), stack: e?.stack || null }).catch(() => {});
+      });
+    }, 10).unref?.();
+
+    res.json({ jobId });
+  } catch (e) {
+    await dbgReport('E', 'backend: /api/cloud/jobs start error', {
+      message: e?.message || String(e),
+      stack: e?.stack || null,
+      uploadId: req?.body?.uploadId || null,
+    });
+    console.error('[Backend] cloud jobs start error:', e);
+    res.status(500).json({ error: 'Cloud job start failed' });
+  }
+});
+
+app.get('/api/cloud/jobs/:jobId', async (req, res) => {
+  try {
+    const jobId = String(req.params.jobId || '');
+    const job = cloudJobs.get(jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json({
+      jobId,
+      status: job.status,
+      progress: job.progress,
+      error: job.error,
+      clips: job.clips,
+    });
+  } catch (e) {
+    await dbgReport('E', 'backend: /api/cloud/jobs/:jobId status error', {
+      message: e?.message || String(e),
+      stack: e?.stack || null,
+      jobId: String(req.params.jobId || ''),
+    });
+    res.status(500).json({ error: 'Cloud job status failed' });
+  }
+});
+
 // In-memory map for YouTube resumable upload sessions: sid -> uploadUrl
 const ytSessions = new Map();
 app.post(
@@ -99,7 +566,7 @@ app.post(
           console.error('[Backend] Failed to save upload:', err);
           return res.status(500).json({ error: 'Failed to save file' });
         }
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const baseUrl = getExternalBaseUrl(req);
         const url = `${baseUrl}/uploads/${encodeURIComponent(path.basename(filePath))}`;
         res.json({ url });
       });

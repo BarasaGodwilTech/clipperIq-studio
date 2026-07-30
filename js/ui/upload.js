@@ -3,6 +3,31 @@ import { clipGenerator } from '../core/clipGenerator.js';
 import { notify, confirmAction } from './notifications.js';
 import { db, STORES } from '../storage/db.js';
 
+// #region debug-point clips-generation-error-upload-ui
+async function dbgReport(hypothesisId, msg, data = {}) {
+  try {
+    const payload = JSON.stringify({
+      sessionId: 'clips-generation-error',
+      runId: 'pre-fix',
+      hypothesisId,
+      msg,
+      data,
+    });
+    const ports = [7778, 7777, 7779, 7780, 7781, 7782, 7783, 7784, 7785, 7786, 7787];
+    for (const p of ports) {
+      try {
+        await fetch(`http://127.0.0.1:${p}/event`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+        });
+        break;
+      } catch {}
+    }
+  } catch {}
+}
+// #endregion debug-point clips-generation-error-upload-ui
+
 function formatBytes(b) {
   if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
   if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
@@ -133,9 +158,13 @@ export const uploadUI = {
     const badge = document.getElementById('bgProcBadge');
     if (badge) badge.style.display = 'none';
 
+    let cloudProcessing = false;
     try {
-      this.setModalStep('Saving video to storage...', 2);
-      const upload = await videoStore.saveUpload(this.currentFile);
+      cloudProcessing = document.getElementById('cloudProcessing')?.checked || false;
+      this.setModalStep(cloudProcessing ? 'Preparing cloud processing...' : 'Saving video to storage...', 2);
+      const upload = cloudProcessing
+        ? await videoStore.saveUploadMetaOnly(this.currentFile)
+        : await videoStore.saveUpload(this.currentFile);
       this.currentUploadId = upload.id;
 
       try {
@@ -149,7 +178,8 @@ export const uploadUI = {
         }
       } catch {}
 
-      this.setModalStep('Loading FFmpeg (first load may take 30s)...', 5);
+      if (cloudProcessing) this.setModalStep('Uploading to backend (ngrok/VPS)...', 5);
+      else this.setModalStep('Loading FFmpeg (first load may take 30s)...', 5);
 
       const targetDuration = parseInt(document.getElementById('clipDuration')?.value || '30');
       const maxClips = parseInt(document.getElementById('maxClips')?.value || '6');
@@ -168,7 +198,9 @@ export const uploadUI = {
       const bgmVolume = Math.max(0, Math.min(1, bvPct / 100));
 
       let bgm = null;
-      if (bgmFile) {
+      if (cloudProcessing && (bgmFile || bgmUrl)) {
+        try { notify.warn('Background music mixing is currently available in local processing mode only.'); } catch {}
+      } else if (bgmFile) {
         const id = videoStore.generateId('bgm');
         await videoStore.saveBlob(id, bgmFile, { name: bgmFile.name, type: bgmFile.type || 'audio' });
         bgm = { type: 'blob', blobId: id, volume: bgmVolume, loop: true };
@@ -183,7 +215,10 @@ export const uploadUI = {
       await clipGenerator.processUpload(
         upload.id,
         (progress) => {
-          if (progress.phase === 'analyzing') {
+          if (progress.phase === 'uploading') {
+            const pct = 5 + (progress.pct || 0) * 0.55;
+            this.setModalProgress(pct, 'Uploading video to backend...');
+          } else if (progress.phase === 'analyzing') {
             const pct = 5 + progress.pct * 0.55;
             this.setModalProgress(pct, this.getPhaseLabel(progress));
           } else if (progress.phase === 'series-skip') {
@@ -192,14 +227,14 @@ export const uploadUI = {
             const pct = 60 + progress.pct * 0.38;
             const partNum = seriesStartPart + (progress.clipIndex || 0);
             const label = seriesMode
-              ? `Recording Part ${partNum}/${progress.total || '?'}...`
+              ? `${cloudProcessing ? 'Generating' : 'Recording'} Part ${partNum}/${progress.total || '?'}...`
               : `Extracting clip ${(progress.clipIndex || 0) + 1}...`;
             this.setModalProgress(pct, label);
           } else if (progress.phase === 'done') {
             this.setModalProgress(100, `${progress.clips?.length || 0} clips ready!`);
           }
         },
-        { targetDuration, maxClips, reEncode, seriesMode, seriesStartPart, overlayFormat, aspectRatio, bgm, originalVolume }
+        { targetDuration, maxClips, reEncode, seriesMode, seriesStartPart, overlayFormat, aspectRatio, bgm, originalVolume, cloudProcessing, videoBlob: cloudProcessing ? this.currentFile : null }
       );
 
       this.hideModal();
@@ -207,6 +242,14 @@ export const uploadUI = {
       notify.success('Clips generated successfully!');
       window.app?.navigate('clips');
     } catch (err) {
+      await dbgReport(cloudProcessing ? 'A' : 'D', 'uploadUI.startProcessing failed', {
+        cloudProcessing,
+        message: err?.message || String(err),
+        stack: err?.stack || null,
+        fileName: this.currentFile?.name || null,
+        fileSize: this.currentFile?.size || null,
+        fileType: this.currentFile?.type || null,
+      });
       console.error('[Upload] Processing failed:', err);
       this.hideModal();
       notify.error('Processing failed. Please try again.');

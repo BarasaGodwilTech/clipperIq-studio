@@ -269,6 +269,14 @@ if ('serviceWorker' in navigator) {
               </div>
             </div>
 
+            <div class="form-group" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <div>
+                <label class="form-label" style="margin-bottom:2px">Cloud Processing</label>
+                <div style="font-size:11px;color:var(--dim)">Uses your backend (ngrok/VPS) with FFmpeg — avoids device storage + recording lag</div>
+              </div>
+              <input type="checkbox" id="cloudProcessing" style="accent-color:var(--accent2);transform:scale(1.05)">
+            </div>
+
             <!-- Smart clips options (default) -->
             <div id="smartClipsGroup">
               <div class="form-group">
@@ -470,7 +478,56 @@ if ('serviceWorker' in navigator) {
               <textarea class="form-input" id="schedCaption" placeholder="Write your caption here...
 #hashtags go at the end"></textarea>
             </div>
-            <div class="form-group" style="margin-bottom:0">
+            <div class="form-group">
+              <label class="form-label">Privacy</label>
+              <select class="form-input form-select" id="schedPrivacy">
+                <option value="PUBLIC_TO_EVERYONE">Public</option>
+                <option value="MUTUAL_FOLLOW_FRIENDS">Friends only (mutual follows)</option>
+                <option value="SELF_ONLY">Self only (TikTok draft)</option>
+              </select>
+            </div>
+
+            <div id="schedTikTokSection" style="margin:10px -4px 0;padding:14px 14px 4px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg3)">
+              <div class="card-title" style="margin:0 0 2px;font-size:13px;color:var(--tiktok)">🎵 TikTok Post Settings</div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px">These settings apply to TikTok posts only.</div>
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <div class="toggle-title">Disable Comments</div>
+                  <div class="toggle-desc">Prevent viewers from leaving comments on this video</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="schedDisableComment"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <div class="toggle-title">Disable Duet</div>
+                  <div class="toggle-desc">Prevent other creators from making a duet with this video</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="schedDisableDuet" checked><span class="toggle-slider"></span></label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <div class="toggle-title">Disable Stitch</div>
+                  <div class="toggle-desc">Prevent other creators from stitching clips of this video</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="schedDisableStitch"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <div class="toggle-title">Branded Content</div>
+                  <div class="toggle-desc">Disclose that this video contains a paid partnership or brand placement</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="schedBrandedContent"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="toggle-row" style="border:none;padding-bottom:4px">
+                <div class="toggle-info">
+                  <div class="toggle-title">Allow Promotion</div>
+                  <div class="toggle-desc">Permit this post to be promoted via TikTok Ads / Boost</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="schedAllowPromotion" checked><span class="toggle-slider"></span></label>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:0;margin-top:14px">
               <label class="form-label">Schedule Date & Time</label>
               <input type="datetime-local" class="form-input" id="schedTime">
             </div>
@@ -832,7 +889,48 @@ if ('serviceWorker' in navigator) {
           <option value="SELF_ONLY">Self only (TikTok draft)</option>
         </select>
       </div>
-      <div class="form-group" style="margin-bottom:20px">
+
+      <div id="scheduleTikTokSection" style="margin:10px -8px 0;padding:14px 14px 4px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg3)">
+        <div class="card-title" style="margin:0 0 2px;font-size:13px;color:var(--tiktok)">🎵 TikTok Post Settings</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px">These settings apply to TikTok posts only.</div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Disable Comments</div>
+            <div class="toggle-desc">Prevent viewers from leaving comments on this video</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="tiktokDisableComment"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Disable Duet</div>
+            <div class="toggle-desc">Prevent other creators from making a duet with this video</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="tiktokDisableDuet" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Disable Stitch</div>
+            <div class="toggle-desc">Prevent other creators from stitching clips of this video</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="tiktokDisableStitch"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-title">Branded Content</div>
+            <div class="toggle-desc">Disclose that this video contains a paid partnership or brand placement</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="tiktokBrandedContent"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row" style="border:none;padding-bottom:4px">
+          <div class="toggle-info">
+            <div class="toggle-title">Allow Promotion</div>
+            <div class="toggle-desc">Permit this post to be promoted via TikTok Ads / Boost</div>
+          </div>
+          <label class="toggle-switch"><input type="checkbox" id="tiktokAllowPromotion" checked><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:20px;margin-top:16px">
         <label class="form-label">Date & Time</label>
         <input type="datetime-local" class="form-input" id="scheduleTime" required>
       </div>

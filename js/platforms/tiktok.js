@@ -207,7 +207,14 @@ export class TikTokAPI {
 
   async publishVideo(videoBlob, caption, options = {}, onProgress = null, abortSignal = null) {
     const token = await this.getValidToken();
-    const { privacy = 'PUBLIC_TO_EVERYONE', allowComments = true, allowDuet = false, allowStitch = true, allowPromotion = true } = options;
+    const {
+      privacy = 'PUBLIC_TO_EVERYONE',
+      allowComments = true,
+      allowDuet = false,
+      allowStitch = true,
+      allowPromotion = true,
+      brandedContent = false,
+    } = options;
 
     // Map UI values to TikTok enums for privacy_level (backward compatible)
     const privacyMap = {
@@ -253,6 +260,7 @@ export class TikTokAPI {
         disable_comment: !allowComments,
         disable_stitch: !allowStitch,
         allow_promotion: allowPromotion,
+        brand_content_toggle: !!brandedContent,
       },
       source_info: {
         source: 'FILE_UPLOAD',
@@ -270,6 +278,11 @@ export class TikTokAPI {
       totalChunks,
       privacyLevel,
       captionLength: (caption || '').length,
+      disableDuet: !allowDuet,
+      disableComment: !allowComments,
+      disableStitch: !allowStitch,
+      allowPromotion,
+      brandContentToggle: !!brandedContent,
     });
 
     let initRes = await fetch(`${base}/api/tiktok/init`, {

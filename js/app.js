@@ -218,6 +218,7 @@ class ClipperIQApp {
     this.setupSettingsTabs();
     this.setupPreviewModal();
     this.initAudioPreviews();
+    this.setupBackendUrlInput();
     uploadUI.init();
 
     cronEngine.registerPlatform('tiktok', tiktokAPI);
@@ -387,7 +388,16 @@ class ClipperIQApp {
     const modal = document.getElementById('scheduleModal');
     const form = document.getElementById('scheduleForm');
     const closeBtn = document.getElementById('scheduleModalClose');
+    const platformEl = document.getElementById('schedulePlatform');
+    const ttSection = document.getElementById('scheduleTikTokSection');
     if (!modal || !form) return;
+
+    const updateTikTokVisibility = () => {
+      if (!ttSection || !platformEl) return;
+      const v = platformEl.value;
+      ttSection.style.display = (v === '' || v === 'TikTok' || v === 'All') ? 'block' : 'none';
+    };
+    platformEl?.addEventListener('change', updateTikTokVisibility);
 
     const closeModal = () => { modal.classList.remove('show'); this._unlockBodyScroll(); };
     closeBtn?.addEventListener('click', closeModal);
@@ -407,10 +417,24 @@ class ClipperIQApp {
       const clip = clipsUI.clips.find(c => c.id === clipId);
       if (!clip) { notify.error('Clip not found'); return; }
 
+      const privacy = document.getElementById('schedulePrivacy')?.value || 'PUBLIC_TO_EVERYONE';
+      const disableComment = !!document.getElementById('tiktokDisableComment')?.checked;
+      const disableDuet = !!document.getElementById('tiktokDisableDuet')?.checked;
+      const disableStitch = !!document.getElementById('tiktokDisableStitch')?.checked;
+      const brandedContent = !!document.getElementById('tiktokBrandedContent')?.checked;
+      const allowPromotion = !!document.getElementById('tiktokAllowPromotion')?.checked;
+      const postOptions = {
+        privacy,
+        allowComments: !disableComment,
+        allowDuet: !disableDuet,
+        allowStitch: !disableStitch,
+        brandedContent,
+        allowPromotion,
+      };
+
       try {
         const submitBtn = form.querySelector('button[type="submit"], .btn.btn-primary');
         if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Scheduling…'; }
-        const privacy = document.getElementById('schedulePrivacy')?.value || 'public';
         if (platform === 'All') {
           const candidates = [
             { name: 'TikTok', key: 'tiktok' },
@@ -426,14 +450,14 @@ class ClipperIQApp {
             return;
           }
           for (const name of targets) {
-            await jobQueue.add({ clipId, blobId: clip.blobId, platform: name, caption, scheduledAt, options: { privacy } });
+            await jobQueue.add({ clipId, blobId: clip.blobId, platform: name, caption, scheduledAt, options: { ...postOptions } });
           }
           modal.classList.remove('show');
           notify.success(`Scheduled on ${targets.join(', ')} for ${new Date(scheduledAt).toLocaleString()}`);
         } else {
           const connected = await authStore.isConnected(platform.toLowerCase());
           if (!connected) { notify.warn(`${platform} is not connected. Go to Accounts to connect.`); return; }
-          await jobQueue.add({ clipId, blobId: clip.blobId, platform, caption, scheduledAt, options: { privacy } });
+          await jobQueue.add({ clipId, blobId: clip.blobId, platform, caption, scheduledAt, options: { ...postOptions } });
           modal.classList.remove('show');
           notify.success(`Scheduled for ${new Date(scheduledAt).toLocaleString()}`);
         }
@@ -458,6 +482,8 @@ class ClipperIQApp {
   openScheduleModal(clip) {
     const modal = document.getElementById('scheduleModal');
     const form = document.getElementById('scheduleForm');
+    const platformEl = document.getElementById('schedulePlatform');
+    const ttSection = document.getElementById('scheduleTikTokSection');
     if (!modal || !form) return;
 
     form.dataset.clipId = clip.id;
@@ -467,6 +493,15 @@ class ClipperIQApp {
     if (timeEl) timeEl.value = local;
     const captionEl = document.getElementById('scheduleCaption');
     if (captionEl) captionEl.value = '';
+    const privacyEl = document.getElementById('schedulePrivacy');
+    if (privacyEl) privacyEl.value = 'PUBLIC_TO_EVERYONE';
+    const dc = document.getElementById('tiktokDisableComment'); if (dc) dc.checked = false;
+    const dd = document.getElementById('tiktokDisableDuet'); if (dd) dd.checked = true;
+    const ds = document.getElementById('tiktokDisableStitch'); if (ds) ds.checked = false;
+    const bc = document.getElementById('tiktokBrandedContent'); if (bc) bc.checked = false;
+    const ap = document.getElementById('tiktokAllowPromotion'); if (ap) ap.checked = true;
+    if (platformEl) platformEl.value = '';
+    if (ttSection) ttSection.style.display = 'block';
 
     modal.classList.add('show');
     this._lockBodyScroll();
@@ -483,6 +518,38 @@ class ClipperIQApp {
     modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
   }
 
+
+  async setupBackendUrlInput() {
+    const input = document.getElementById('backendBaseUrl');
+    if (!input) return;
+
+    try {
+      const savedUrl = await db.getSetting('backend_base_url');
+      if (savedUrl) input.value = savedUrl;
+    } catch (e) {
+      console.warn('Failed to load backend_base_url:', e);
+    }
+
+    input.addEventListener('change', async () => {
+      const url = input.value.trim();
+      if (url) {
+        try {
+          await db.setSetting('backend_base_url', url);
+          notify.success('Backend URL saved');
+        } catch (e) {
+          console.error('Failed to save backend_base_url:', e);
+          notify.error('Failed to save backend URL');
+        }
+      } else {
+        try {
+          await db.setSetting('backend_base_url', '');
+          notify.success('Backend URL cleared');
+        } catch (e) {
+          console.error('Failed to clear backend_base_url:', e);
+        }
+      }
+    });
+  }
   setupSettingsTabs() {
     document.getElementById('settingsTabs')?.querySelectorAll('.tab').forEach((tab, i) => {
       tab.addEventListener('click', () => {
@@ -602,6 +669,21 @@ class ClipperIQApp {
     const clip = clips.find(c => c.id === clipId);
     if (!clip) { notify.error('Clip not found'); return; }
 
+    const privacy = document.getElementById('schedPrivacy')?.value || 'PUBLIC_TO_EVERYONE';
+    const disableComment = !!document.getElementById('schedDisableComment')?.checked;
+    const disableDuet = !!document.getElementById('schedDisableDuet')?.checked;
+    const disableStitch = !!document.getElementById('schedDisableStitch')?.checked;
+    const brandedContent = !!document.getElementById('schedBrandedContent')?.checked;
+    const allowPromotion = !!document.getElementById('schedAllowPromotion')?.checked;
+    const postOptions = {
+      privacy,
+      allowComments: !disableComment,
+      allowDuet: !disableDuet,
+      allowStitch: !disableStitch,
+      brandedContent,
+      allowPromotion,
+    };
+
     try {
       if (platform === 'All') {
         const candidates = [
@@ -615,18 +697,25 @@ class ClipperIQApp {
         }
         if (targets.length === 0) { notify.warn('No connected platforms. Connect accounts in the Accounts tab.'); return; }
         for (const name of targets) {
-          await jobQueue.add({ clipId, blobId: clip.blobId, platform: name, caption, scheduledAt });
+          await jobQueue.add({ clipId, blobId: clip.blobId, platform: name, caption, scheduledAt, options: { ...postOptions } });
         }
         notify.success(`Scheduled on ${targets.join(', ')} for ${new Date(scheduledAt).toLocaleString()}`);
       } else {
         const connected = await authStore.isConnected(platform.toLowerCase());
         if (!connected) { notify.warn(`${platform} is not connected — go to Accounts to connect`); return; }
-        await jobQueue.add({ clipId, blobId: clip.blobId, platform, caption, scheduledAt });
+        await jobQueue.add({ clipId, blobId: clip.blobId, platform, caption, scheduledAt, options: { ...postOptions } });
         notify.success(`Scheduled on ${platform} for ${new Date(scheduledAt).toLocaleString()}`);
       }
       document.getElementById('schedClipSelect').value = '';
       document.getElementById('schedPlatformSelect').value = '';
       document.getElementById('schedCaption').value = '';
+      document.getElementById('schedPrivacy').value = 'PUBLIC_TO_EVERYONE';
+      const sdc = document.getElementById('schedDisableComment'); if (sdc) sdc.checked = false;
+      const sdd = document.getElementById('schedDisableDuet'); if (sdd) sdd.checked = true;
+      const sds = document.getElementById('schedDisableStitch'); if (sds) sds.checked = false;
+      const sbc = document.getElementById('schedBrandedContent'); if (sbc) sbc.checked = false;
+      const sap = document.getElementById('schedAllowPromotion'); if (sap) sap.checked = true;
+      const stt = document.getElementById('schedTikTokSection'); if (stt) stt.style.display = 'block';
       await this._updateQueueBadge();
     } catch (err) {
       if (/already scheduled/i.test(err?.message || '')) notify.warn('Already scheduled for that time');
@@ -641,6 +730,18 @@ class ClipperIQApp {
     const calGrid2 = document.getElementById('calGrid2');
     const calGrid = document.getElementById('calGrid');
     if (calGrid2 && calGrid) calGrid2.innerHTML = calGrid.innerHTML;
+
+    const platEl = document.getElementById('schedPlatformSelect');
+    const ttSection = document.getElementById('schedTikTokSection');
+    if (platEl && ttSection && !platEl.dataset.ttBound) {
+      platEl.dataset.ttBound = '1';
+      const updateVis = () => {
+        const v = platEl.value;
+        ttSection.style.display = (v === '' || v === 'TikTok' || v === 'All') ? 'block' : 'none';
+      };
+      platEl.addEventListener('change', updateVis);
+      updateVis();
+    }
 
     const select = document.getElementById('schedClipSelect');
     if (!select) return;

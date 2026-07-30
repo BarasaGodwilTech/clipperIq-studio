@@ -3,6 +3,32 @@ import { sceneDetector } from './sceneDetector.js';
 import { videoProcessor } from './videoProcessor.js';
 import { videoStore } from '../storage/videoStore.js';
 import { db, STORES } from '../storage/db.js';
+import { getBackendBaseUrl } from './config.js';
+
+// #region debug-point clips-generation-error-clip-generator
+async function dbgReport(hypothesisId, msg, data = {}) {
+  try {
+    const payload = JSON.stringify({
+      sessionId: 'clips-generation-error',
+      runId: 'pre-fix',
+      hypothesisId,
+      msg,
+      data,
+    });
+    const ports = [7778, 7777, 7779, 7780, 7781, 7782, 7783, 7784, 7785, 7786, 7787];
+    for (const p of ports) {
+      try {
+        await fetch(`http://127.0.0.1:${p}/event`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+        });
+        break;
+      } catch {}
+    }
+  } catch {}
+}
+// #endregion debug-point clips-generation-error-clip-generator
 
 export class ClipGenerator {
   constructor() {
@@ -234,6 +260,8 @@ export class ClipGenerator {
       aspectRatio = 'original',
       bgm = null,
       originalVolume = 1,
+      cloudProcessing = false,
+      videoBlob: videoBlobOverride = null,
     } = options;
 
     this.MAX_CLIPS = maxClips;
@@ -244,7 +272,7 @@ export class ClipGenerator {
     const upload = await db.get(STORES.UPLOADS, uploadId);
     if (!upload) throw new Error(`Upload ${uploadId} not found`);
 
-    const videoBlob = await videoStore.getBlob(upload.blobId);
+    const videoBlob = videoBlobOverride || (upload.blobId ? await videoStore.getBlob(upload.blobId) : null);
     if (!videoBlob) throw new Error(`Video blob not found for upload ${uploadId}`);
 
     await db.put(STORES.UPLOADS, { ...upload, status: 'processing', updatedAt: new Date().toISOString() });
@@ -252,19 +280,189 @@ export class ClipGenerator {
     let candidates;
     let duration;
 
+    if (cloudProcessing) {
+      const base = (await getBackendBaseUrl()) || '';
+      if (!base) {
+        await dbgReport('A', 'cloud processing: missing backend base url', { uploadId });
+        throw new Error('Backend base URL is not configured');
+      }
+
+      let cloudUploadId;
+      try {
+        cloudUploadId = await this._cloudUploadVideo(base, videoBlob, onProgress);
+      } catch (e) {
+        await dbgReport('B', 'cloud processing: upload failed', {
+          uploadId,
+          base,
+          message: e?.message || String(e),
+          stack: e?.stack || null,
+        });
+        throw e;
+      }
+
+      if (seriesMode) {
+        if (onProgress) onProgress({ phase: 'series-skip', pct: 60 });
+        try {
+          duration = await this._cloudGetDuration(base, cloudUploadId);
+        } catch (e) {
+          await dbgReport('E', 'cloud processing: duration lookup failed', {
+            uploadId,
+            cloudUploadId,
+            base,
+            message: e?.message || String(e),
+            stack: e?.stack || null,
+          });
+          throw e;
+        }
+        const total = Math.ceil(duration / targetDuration);
+        const series = [];
+        for (let i = 0; i < total; i++) {
+          const rawStart = i * targetDuration;
+          const start = Math.max(0, rawStart);
+          const maxDur = duration - start;
+          const clipDur = Math.min(targetDuration, maxDur);
+          if (clipDur <= 0.25) continue;
+          series.push({
+            start,
+            duration: clipDur,
+            totalScore: 100,
+            audioScore: 0,
+            sceneScore: 0,
+            posScore: 1,
+            sources: ['series'],
+          });
+        }
+        candidates = series;
+      } else {
+        if (onProgress) onProgress({ phase: 'analyzing', pct: 0 });
+        let analyzed;
+        try {
+          analyzed = await this._cloudAnalyze(base, cloudUploadId, { maxClips, targetDuration }, (p) => {
+            if (onProgress) onProgress({ phase: 'analyzing', pct: p * 0.6 });
+          });
+        } catch (e) {
+          await dbgReport('E', 'cloud processing: analyze failed', {
+            uploadId,
+            cloudUploadId,
+            base,
+            message: e?.message || String(e),
+            stack: e?.stack || null,
+          });
+          throw e;
+        }
+        candidates = (analyzed.candidates || []).slice(0, maxClips);
+        duration = analyzed.duration || 0;
+      }
+
+      let jobId;
+      try {
+        jobId = await this._cloudStartJob(base, cloudUploadId, candidates, {
+          reEncode,
+          aspectRatio,
+          overlayFormat,
+          seriesStartPart,
+        });
+      } catch (e) {
+        await dbgReport('E', 'cloud processing: job start failed', {
+          uploadId,
+          cloudUploadId,
+          base,
+          candidatesCount: Array.isArray(candidates) ? candidates.length : null,
+          message: e?.message || String(e),
+          stack: e?.stack || null,
+        });
+        throw e;
+      }
+
+      let job;
+      try {
+        job = await this._cloudWaitJob(base, jobId, (p) => {
+          if (onProgress) onProgress({ phase: 'generating', pct: p, clipIndex: 0, total: candidates.length });
+        });
+      } catch (e) {
+        await dbgReport('E', 'cloud processing: job wait failed', {
+          uploadId,
+          cloudUploadId,
+          jobId,
+          base,
+          message: e?.message || String(e),
+          stack: e?.stack || null,
+        });
+        throw e;
+      }
+
+      if (!job || !Array.isArray(job.clips)) throw new Error('Cloud job returned no clips');
+
+      const results = [];
+      const total = job.clips.length;
+      for (let i = 0; i < total; i++) {
+        const clipInfo = job.clips[i];
+        let r;
+        try {
+          r = await fetch(clipInfo.url);
+        } catch (e) {
+          await dbgReport('C', 'cloud processing: clip download request failed', {
+            uploadId,
+            cloudUploadId,
+            jobId,
+            index: i,
+            url: clipInfo?.url || null,
+            message: e?.message || String(e),
+            stack: e?.stack || null,
+          });
+          throw e;
+        }
+        if (!r.ok) {
+          await dbgReport('C', 'cloud processing: clip download returned non-OK', {
+            uploadId,
+            cloudUploadId,
+            jobId,
+            index: i,
+            url: clipInfo?.url || null,
+            status: r.status,
+          });
+          throw new Error(`Failed to download clip ${i + 1}`);
+        }
+        const clipBlob = await r.blob();
+        const c = {
+          start: typeof clipInfo.startTime === 'number' ? clipInfo.startTime : (candidates[i]?.start || 0),
+          duration: typeof clipInfo.duration === 'number' ? clipInfo.duration : (candidates[i]?.duration || targetDuration),
+          totalScore: typeof clipInfo.score === 'number' ? clipInfo.score : (candidates[i]?.totalScore || 0),
+          audioScore: typeof clipInfo.audioScore === 'number' ? clipInfo.audioScore : (candidates[i]?.audioScore || 0),
+          sceneScore: typeof clipInfo.sceneScore === 'number' ? clipInfo.sceneScore : (candidates[i]?.sceneScore || 0),
+          posScore: candidates[i]?.posScore || 1,
+          sources: clipInfo.sources || candidates[i]?.sources || [],
+        };
+        const overlayOptions = { format: overlayFormat, partNumber: seriesStartPart + i };
+        const saved = await this._saveClip(uploadId, clipBlob, c, i, results, overlayOptions, null, aspectRatio);
+        if (onProgress) onProgress({ phase: 'generating', pct: ((i + 1) / total) * 100, clipIndex: i, total });
+        if (!saved) throw new Error(`Failed to save clip ${i + 1}`);
+      }
+
+      await db.put(STORES.UPLOADS, {
+        ...upload,
+        status: 'done',
+        clipCount: results.length,
+        duration,
+        updatedAt: new Date().toISOString(),
+        cloudUploadId,
+        cloudJobId: jobId,
+      });
+
+      if (onProgress) onProgress({ phase: 'done', pct: 100, clips: results });
+      return results;
+    }
+
     if (seriesMode) {
       if (onProgress) onProgress({ phase: 'series-skip', pct: 60 });
       duration = await this._getVideoDuration(videoBlob);
 
-      // Sequential parts with optional overlap between consecutive clips.
-      // Example: with targetDuration=30 and overlapSeconds=3,
-      // Part 1: [0, 30], Part 2: [27, 57], Part 3: [54, 84], ...
-      const overlapSeconds = 3;
+      // Sequential parts with no overlap between consecutive clips.
       const total = Math.ceil(duration / targetDuration);
       const series = [];
       for (let i = 0; i < total; i++) {
         const rawStart = i * targetDuration;
-        const start = i === 0 ? 0 : Math.max(0, rawStart - overlapSeconds);
+        const start = Math.max(0, rawStart);
         const maxDur = duration - start;
         const clipDur = Math.min(targetDuration, maxDur);
         if (clipDur <= 0.25) continue; // Skip degenerate segments at the tail
@@ -292,19 +490,29 @@ export class ClipGenerator {
     const overlayOptions = { format: overlayFormat, partNumber: seriesStartPart };
 
     if (onProgress) onProgress({ phase: 'generating', pct: 0, clipIndex: 0, total: candidates.length });
-    const clips = await this.generateClips(uploadId, videoBlob, candidates, {
-      reEncode,
-      overlayOptions,
-      aspectRatio,
-      bgm,
-      originalVolume,
-      onProgress: (p) => {
-        const total = candidates.length || 1;
-        const clipsDone = (p.clipIndex || 0) + Math.min((p.pct || 0) / 100, 1);
-        const normalizedPct = Math.min((clipsDone / total) * 100, 100);
-        if (onProgress) onProgress({ phase: 'generating', pct: normalizedPct, clipIndex: p.clipIndex || 0, total });
-      },
-    });
+    let clips;
+    try {
+      clips = await this.generateClips(uploadId, videoBlob, candidates, {
+        reEncode,
+        overlayOptions,
+        aspectRatio,
+        bgm,
+        originalVolume,
+        onProgress: (p) => {
+          const total = candidates.length || 1;
+          const clipsDone = (p.clipIndex || 0) + Math.min((p.pct || 0) / 100, 1);
+          const normalizedPct = Math.min((clipsDone / total) * 100, 100);
+          if (onProgress) onProgress({ phase: 'generating', pct: normalizedPct, clipIndex: p.clipIndex || 0, total });
+        },
+      });
+    } catch (e) {
+      await dbgReport('D', 'local processing: generateClips failed', {
+        uploadId,
+        message: e?.message || String(e),
+        stack: e?.stack || null,
+      });
+      throw e;
+    }
 
     await db.put(STORES.UPLOADS, {
       ...upload,
@@ -316,6 +524,107 @@ export class ClipGenerator {
 
     if (onProgress) onProgress({ phase: 'done', pct: 100, clips });
     return clips;
+  }
+
+  async _cloudUploadVideo(baseUrl, videoBlob, onProgress) {
+    const base = String(baseUrl || '').replace(/\/+$/, '');
+    const initRes = await fetch(`${base}/api/cloud/upload/init`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: videoBlob?.name || 'video.mp4',
+        size: videoBlob?.size || 0,
+        type: videoBlob?.type || 'video/mp4',
+      }),
+    });
+    if (!initRes.ok) throw new Error('Cloud upload init failed');
+    const init = await initRes.json().catch(() => ({}));
+    const uploadId = init.uploadId;
+    if (!uploadId) throw new Error('Cloud upload init returned no uploadId');
+
+    const chunkSize = 8 * 1024 * 1024;
+    const total = videoBlob.size || 0;
+    let offset = 0;
+    while (offset < total) {
+      const end = Math.min(total, offset + chunkSize) - 1;
+      const chunk = videoBlob.slice(offset, end + 1);
+      const buf = await chunk.arrayBuffer();
+      const putRes = await fetch(`${base}/api/cloud/upload?uploadId=${encodeURIComponent(uploadId)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Range': `bytes ${offset}-${end}/${total}`,
+        },
+        body: buf,
+      });
+      if (!putRes.ok) throw new Error('Cloud upload chunk failed');
+      offset = end + 1;
+      if (onProgress) onProgress({ phase: 'uploading', pct: (offset / total) * 100 });
+    }
+    return uploadId;
+  }
+
+  async _cloudGetDuration(baseUrl, uploadId) {
+    const base = String(baseUrl || '').replace(/\/+$/, '');
+    const r = await fetch(`${base}/api/cloud/info`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uploadId }),
+    });
+    if (!r.ok) throw new Error('Cloud duration lookup failed');
+    const data = await r.json().catch(() => ({}));
+    return Number(data.duration) || 0;
+  }
+
+  async _cloudAnalyze(baseUrl, uploadId, options = {}, onPct = null) {
+    const base = String(baseUrl || '').replace(/\/+$/, '');
+    const r = await fetch(`${base}/api/cloud/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uploadId,
+        maxClips: options.maxClips,
+        targetDuration: options.targetDuration,
+      }),
+    });
+    if (!r.ok) throw new Error('Cloud analyze failed');
+    if (onPct) onPct(100);
+    return r.json().catch(() => ({ duration: 0, candidates: [] }));
+  }
+
+  async _cloudStartJob(baseUrl, uploadId, candidates, options = {}) {
+    const base = String(baseUrl || '').replace(/\/+$/, '');
+    const r = await fetch(`${base}/api/cloud/jobs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uploadId,
+        candidates,
+        reEncode: !!options.reEncode,
+        aspectRatio: options.aspectRatio,
+        overlayFormat: options.overlayFormat,
+        seriesStartPart: options.seriesStartPart,
+      }),
+    });
+    if (!r.ok) throw new Error('Cloud job start failed');
+    const data = await r.json().catch(() => ({}));
+    if (!data.jobId) throw new Error('Cloud job start returned no jobId');
+    return data.jobId;
+  }
+
+  async _cloudWaitJob(baseUrl, jobId, onPct = null) {
+    const base = String(baseUrl || '').replace(/\/+$/, '');
+    const start = Date.now();
+    while (true) {
+      const r = await fetch(`${base}/api/cloud/jobs/${encodeURIComponent(jobId)}`);
+      if (!r.ok) throw new Error('Cloud job status failed');
+      const data = await r.json().catch(() => ({}));
+      if (onPct) onPct(Number(data.progress) || 0);
+      if (data.status === 'done') return data;
+      if (data.status === 'failed') throw new Error(data.error || 'Cloud job failed');
+      if (Date.now() - start > 12 * 60 * 60 * 1000) throw new Error('Cloud job timed out');
+      await new Promise(r => setTimeout(r, 1500));
+    }
   }
 }
 

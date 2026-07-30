@@ -75,6 +75,14 @@ export const clipsUI = {
               <input type="datetime-local" class="form-input" id="seriesStartTime">
             </div>
             <div class="form-group">
+              <label class="form-label">Privacy</label>
+              <select class="form-input form-select" id="seriesPrivacy">
+                <option value="PUBLIC_TO_EVERYONE">Public</option>
+                <option value="MUTUAL_FOLLOW_FRIENDS">Friends only (mutual follows)</option>
+                <option value="SELF_ONLY">Self only (TikTok draft)</option>
+              </select>
+            </div>
+            <div class="form-group">
               <label class="form-label">Max Posts per Day</label>
               <input type="number" class="form-input" id="seriesMaxPerDay" min="1" max="6" value="2">
             </div>
@@ -83,7 +91,46 @@ export const clipsUI = {
               <label class="form-label" for="seriesBestTimes" style="margin:0">Use best-time windows</label>
             </div>
           </div>
-          <div id="seriesPlanTable" style="max-height:300px;overflow:auto;margin-top:8px;border:1px solid var(--bg3);border-radius:var(--radius)"></div>
+          <div id="seriesTikTokSection" style="margin:14px -8px 0;padding:14px 14px 4px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg3)">
+            <div class="card-title" style="margin:0 0 2px;font-size:13px;color:var(--tiktok)">🎵 TikTok Post Settings</div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:6px">These settings apply to TikTok posts only.</div>
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <div class="toggle-title">Disable Comments</div>
+                <div class="toggle-desc">Prevent viewers from leaving comments on this video</div>
+              </div>
+              <label class="toggle-switch"><input type="checkbox" id="seriesDisableComment"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <div class="toggle-title">Disable Duet</div>
+                <div class="toggle-desc">Prevent other creators from making a duet with this video</div>
+              </div>
+              <label class="toggle-switch"><input type="checkbox" id="seriesDisableDuet" checked><span class="toggle-slider"></span></label>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <div class="toggle-title">Disable Stitch</div>
+                <div class="toggle-desc">Prevent other creators from stitching clips of this video</div>
+              </div>
+              <label class="toggle-switch"><input type="checkbox" id="seriesDisableStitch"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <div class="toggle-title">Branded Content</div>
+                <div class="toggle-desc">Disclose that this video contains a paid partnership or brand placement</div>
+              </div>
+              <label class="toggle-switch"><input type="checkbox" id="seriesBrandedContent"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="toggle-row" style="border:none;padding-bottom:4px">
+              <div class="toggle-info">
+                <div class="toggle-title">Allow Promotion</div>
+                <div class="toggle-desc">Permit this post to be promoted via TikTok Ads / Boost</div>
+              </div>
+              <label class="toggle-switch"><input type="checkbox" id="seriesAllowPromotion" checked><span class="toggle-slider"></span></label>
+            </div>
+          </div>
+          <div id="seriesPlanTable" style="max-height:300px;overflow:auto;margin-top:14px;border:1px solid var(--bg3);border-radius:var(--radius)"></div>
           <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
             <button class="btn btn-ghost" onclick="document.getElementById('seriesScheduleModal').classList.remove('show');window.app?._unlockBodyScroll?.()">Close</button>
             <button class="btn btn-ghost" onclick="window.clipsUI.generateSeriesPlan()">Generate</button>
@@ -91,6 +138,17 @@ export const clipsUI = {
           </div>
         </div>`;
       document.body.appendChild(host);
+
+      const platEl = host.querySelector('#seriesPlatform');
+      const ttSec = host.querySelector('#seriesTikTokSection');
+      if (platEl && ttSec) {
+        const upd = () => {
+          const v = platEl.value;
+          ttSec.style.display = (v === '' || v === 'TikTok' || v === 'All') ? 'block' : 'none';
+        };
+        platEl.addEventListener('change', upd);
+        upd();
+      }
     }
 
     const upSel = document.getElementById('seriesUploadSelect');
@@ -179,6 +237,21 @@ export const clipsUI = {
     const base = (document.getElementById('seriesBaseTitle')?.value || 'Video').trim();
     const plat = document.getElementById('seriesPlatform')?.value || 'All';
 
+    const privacy = document.getElementById('seriesPrivacy')?.value || 'PUBLIC_TO_EVERYONE';
+    const disableComment = !!document.getElementById('seriesDisableComment')?.checked;
+    const disableDuet = !!document.getElementById('seriesDisableDuet')?.checked;
+    const disableStitch = !!document.getElementById('seriesDisableStitch')?.checked;
+    const brandedContent = !!document.getElementById('seriesBrandedContent')?.checked;
+    const allowPromotion = !!document.getElementById('seriesAllowPromotion')?.checked;
+    const postOptions = {
+      privacy,
+      allowComments: !disableComment,
+      allowDuet: !disableDuet,
+      allowStitch: !disableStitch,
+      brandedContent,
+      allowPromotion,
+    };
+
     const platforms = async () => {
       if (plat !== 'All') return [plat];
       const out = [];
@@ -198,7 +271,7 @@ export const clipsUI = {
         const when = val ? new Date(val) : p.when;
         for (const name of targets) {
           const caption = `${base} — Part ${p.clip.partNumber}`;
-          await jobQueue.add({ clipId: p.clip.id, blobId: p.clip.blobId, platform: name, caption, scheduledAt: when.toISOString(), options: {} });
+          await jobQueue.add({ clipId: p.clip.id, blobId: p.clip.blobId, platform: name, caption, scheduledAt: when.toISOString(), options: { ...postOptions } });
         }
       }
       notify.success(`Scheduled ${plan.items.length} part(s) on ${targets.join(', ')}`);

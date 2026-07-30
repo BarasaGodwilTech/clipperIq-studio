@@ -56,6 +56,28 @@ export const videoStore = {
     return { id: uploadId, blobId: id, ...uploadRecord };
   },
 
+  async saveUploadMetaOnly(file, extra = {}) {
+    const base = String(file?.name || '').replace(/\.[^.]+$/, '');
+    const words = base.replace(/[_\-.]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+    const title = words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    const seriesKey = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+    const uploadRecord = {
+      blobId: null,
+      name: file?.name || 'video',
+      size: file?.size || 0,
+      type: file?.type || '',
+      createdAt: new Date().toISOString(),
+      status: 'uploaded',
+      title,
+      seriesKey,
+      storageMode: 'cloud',
+      ...extra,
+    };
+    const uploadId = await db.put(STORES.UPLOADS, uploadRecord);
+    return { id: uploadId, ...uploadRecord };
+  },
+
   async getUpload(uploadId) {
     return db.get(STORES.UPLOADS, uploadId);
   },
